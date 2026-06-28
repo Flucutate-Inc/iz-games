@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <title>コインフリップ</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main class="app">
+      <!-- 残高 -->
+      <header class="topbar">
+        <span class="topbar-label">あなたのIZ</span>
+        <span id="balance" class="topbar-balance">—</span>
+      </header>
+
+      <!-- タブ切り替え -->
+      <nav class="tabs">
+        <button id="tab-play" class="tab tab-active" type="button">あそぶ</button>
+        <button id="tab-rank" class="tab" type="button">ランキング</button>
+      </nav>
+
+      <!-- プレイ画面 -->
+      <section id="view-play" class="view">
+        <div class="coin-stage">
+          <div id="coin" class="coin">
+            <div class="coin-face coin-heads">表</div>
+            <div class="coin-face coin-tails">裏</div>
+          </div>
+        </div>
+
+        <p id="result" class="result"></p>
+
+        <div class="choices">
+          <button id="choice-heads" class="choice choice-active" type="button" data-choice="heads">表</button>
+          <button id="choice-tails" class="choice" type="button" data-choice="tails">裏</button>
+        </div>
+
+        <div class="bet">
+          <label class="bet-label" for="amount">かけ金（IZ）</label>
+          <input id="amount" class="bet-input" type="number" inputmode="numeric" min="10" step="10" value="100" />
+          <div class="chips">
+            <button class="chip" type="button" data-amount="10">10</button>
+            <button class="chip" type="button" data-amount="100">100</button>
+            <button class="chip" type="button" data-amount="500">500</button>
+            <button class="chip" type="button" data-amount="1000">1000</button>
+          </div>
+        </div>
+
+        <button id="bet-btn" class="bet-btn" type="button" disabled>賭ける</button>
+      </section>
+
+      <!-- ランキング画面 -->
+      <section id="view-rank" class="view view-hidden">
+        <h2 class="rank-title">取得金額ランキング</h2>
+        <ol id="rank-list" class="rank-list"></ol>
+        <p id="rank-empty" class="rank-empty view-hidden">まだ記録がありません</p>
+      </section>
+    </main>
+
+    <script src="../../sdk/iz-sdk.js"></script>
+    <script src="./main.js"></script>
+  </body>
+</html>

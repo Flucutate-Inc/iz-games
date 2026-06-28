@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "games": [
+    {
+      "id": "coinflip",
+      "name": "コインフリップ",
+      "description": "表か裏かにIZを賭けよう。当たれば2倍、外れたらゼロ。",
+      "url": "https://flucutate-inc.github.io/iz-games/games/coinflip/index.html",
+      "thumbnail": "https://flucutate-inc.github.io/iz-games/games/coinflip/thumb.svg",
+      "minBet": 10,
+      "maxBet": 10000
+    }
+  ]
+}
