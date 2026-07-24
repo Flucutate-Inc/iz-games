@@ -17,18 +17,22 @@
 
 | type           | ペイロード                                                                   | 説明                               |
 | -------------- | ---------------------------------------------------------------------------- | ---------------------------------- |
-| `iz:init`      | `{ protocol, user:{uid,displayName}, balance, game:{id,minBet,maxBet} }`      | 初期化。`iz:ready` への応答         |
-| `iz:betResult` | `{ requestId, won, choice, coinResult, payout, balance }`                     | 賭けの結果（サーバーが決定）        |
-| `iz:ranking`   | `{ requestId, entries:[{rank,displayName,net}] }`                            | 取得金額ランキング                  |
-| `iz:error`     | `{ requestId, code, message }`                                                | リクエスト失敗                      |
+| `iz:init`        | `{ protocol, user:{uid,displayName}, balance, game:{id,minBet,maxBet} }`      | 初期化。`iz:ready` への応答         |
+| `iz:betResult`   | `{ requestId, won, choice, coinResult, payout, balance }`                     | 賭けの結果（サーバーが決定）        |
+| `iz:ranking`     | `{ requestId, entries:[{rank,displayName,net}] }`                            | 取得金額ランキング（賭けゲーム）    |
+| `iz:scoreAck`    | `{ requestId, best, isBest }`                                                 | 距離スコア送信の結果（自己ベスト）  |
+| `iz:leaderboard` | `{ requestId, entries:[{rank,displayName,score}] }`                          | 距離スコアの共通リーダーボード      |
+| `iz:error`       | `{ requestId, code, message }`                                                | リクエスト失敗                      |
 
 ### ゲーム → ホスト
 
 | type         | ペイロード                          | 説明                       |
 | ------------ | ----------------------------------- | -------------------------- |
-| `iz:ready`   | `{ protocol }`                      | 読み込み完了通知            |
-| `iz:bet`     | `{ requestId, choice, amount }`     | 賭けの依頼（`amount` は正の整数） |
-| `iz:ranking` | `{ requestId }`                     | ランキング取得依頼          |
+| `iz:ready`       | `{ protocol }`                      | 読み込み完了通知            |
+| `iz:bet`         | `{ requestId, choice, amount }`     | 賭けの依頼（`amount` は正の整数） |
+| `iz:ranking`     | `{ requestId }`                     | 取得金額ランキング取得依頼   |
+| `iz:submitScore` | `{ requestId, score }`              | 距離スコア送信（`score` は0以上の整数。IZは動かさない） |
+| `iz:leaderboard` | `{ requestId }`                     | 共通リーダーボード取得依頼   |
 
 ## セキュリティ（重要）
 
@@ -51,9 +55,17 @@
   IZ.placeBet('heads', 100).then(function (res) {
     // res = { won, choice, coinResult, payout, balance }
   });
-  // ランキング
+  // 取得金額ランキング（賭けゲーム）
   IZ.getRanking().then(function (entries) {
     /* [{rank,displayName,net}] */
+  });
+
+  // 距離スコア（IZ を賭けないゲーム）: 送信と共通リーダーボード取得
+  IZ.submitScore(1234).then(function (res) {
+    /* res = { best, isBest } */
+  });
+  IZ.getLeaderboard().then(function (entries) {
+    /* [{rank,displayName,score}] */
   });
 </script>
 ```

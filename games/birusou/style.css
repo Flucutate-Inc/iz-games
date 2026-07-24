@@ -1,0 +1,390 @@
+/* ── チャリ走 : ネオブルータリズム（白黒基調 / アクセント最小） ──
+   極太の黒枠 / ハードシャドウ(ぼかしなし) / 角ばり。色は白・黒・グレーのみ、
+   差し色(赤)はプライマリボタンとハイライトだけに最小限。 */
+:root {
+  --black: #111111;
+  --white: #ffffff;
+  --paper: #f5f5f3;
+  --gray: #d7d7d5;
+  --gray-d: #8b8b89;
+  --accent: #ff3b30;         /* 差し色（最小限） */
+  --border: 4px solid var(--black);
+  --shadow: 8px 8px 0 var(--black);
+  --shadow-sm: 5px 5px 0 var(--black);
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  font-family: 'Arial Black', 'Helvetica Neue', -apple-system, 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif;
+  color: var(--black);
+  background: var(--paper);
+  user-select: none;
+}
+
+.app,
+.stage {
+  position: absolute;
+  inset: 0;
+}
+.stage {
+  overflow: hidden;
+}
+
+#game {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+}
+
+/* ── HUD ── */
+.hud {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  right: 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: stretch;
+  pointer-events: none;
+  gap: 10px;
+}
+.hud-score,
+.hud-best {
+  border: var(--border);
+  box-shadow: var(--shadow-sm);
+  background: var(--white);
+  padding: 6px 14px;
+  font-weight: 900;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+}
+.hud-score {
+  font-size: 30px;
+}
+.hud-best {
+  background: var(--black);
+  color: var(--white);
+  font-size: 14px;
+  letter-spacing: 0.06em;
+}
+
+/* ── オーバーレイ + パネル ── */
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: var(--black);
+}
+.overlay#view-over {
+  background: rgba(17, 17, 17, 0.55);
+}
+
+.panel {
+  width: 100%;
+  max-width: 360px;
+  border: var(--border);
+  box-shadow: var(--shadow);
+  background: var(--paper);
+  padding: 22px 20px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 14px;
+  text-align: center;
+}
+
+.title {
+  margin: 0;
+  font-size: 54px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  line-height: 0.95;
+  color: var(--white);
+  background: var(--black);
+  border: var(--border);
+  box-shadow: var(--shadow-sm);
+  padding: 12px 8px;
+  transform: rotate(-2deg);
+}
+.subtitle {
+  margin: 4px 0 2px;
+  font-size: 14px;
+  font-weight: 800;
+}
+.hint {
+  margin: 4px 0 0;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.5;
+  color: var(--gray-d);
+}
+
+/* ── モードカード ── */
+.mode-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.mode-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  border: var(--border);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  text-align: left;
+  transition: transform 0.05s ease, box-shadow 0.05s ease;
+}
+.mode-card-free {
+  background: var(--black);
+  color: var(--white);
+}
+.mode-card-bet {
+  background: var(--white);
+  color: var(--black);
+}
+.mode-card:active {
+  transform: translate(3px, 3px);
+  box-shadow: 2px 2px 0 var(--black);
+}
+.mode-card:disabled {
+  cursor: not-allowed;
+  background: var(--gray);
+  color: var(--gray-d);
+  box-shadow: var(--shadow-sm);
+}
+.mode-name {
+  font-size: 21px;
+  font-weight: 900;
+}
+.mode-desc {
+  font-size: 12px;
+  font-weight: 800;
+  opacity: 0.85;
+}
+.mode-note {
+  align-self: flex-start;
+  margin-top: 6px;
+  padding: 2px 8px;
+  border: 2px solid var(--black);
+  background: var(--accent);
+  color: var(--white);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+/* ── ボタン ── */
+.btn {
+  border: var(--border);
+  box-shadow: var(--shadow-sm);
+  padding: 13px 22px;
+  font-size: 18px;
+  font-weight: 900;
+  cursor: pointer;
+  transition: transform 0.05s ease, box-shadow 0.05s ease;
+  font-family: inherit;
+}
+.btn:active {
+  transform: translate(3px, 3px);
+  box-shadow: 2px 2px 0 var(--black);
+}
+.btn-primary {
+  background: var(--accent);
+  color: var(--white);
+}
+.btn-ghost {
+  background: var(--white);
+  color: var(--black);
+  font-size: 15px;
+  padding: 10px 18px;
+}
+.btn-row {
+  display: flex;
+  gap: 10px;
+}
+.btn-row .btn {
+  flex: 1;
+}
+
+/* ── 賭け金選択 ── */
+.bet-title {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 900;
+}
+.bet-balance {
+  margin: 0;
+  font-weight: 900;
+  font-size: 16px;
+}
+.bet-balance span {
+  color: var(--accent);
+}
+.bet-input {
+  width: 100%;
+  padding: 12px 14px;
+  border: var(--border);
+  box-shadow: var(--shadow-sm);
+  font-size: 26px;
+  font-weight: 900;
+  text-align: center;
+  color: var(--black);
+  background: var(--white);
+  font-family: inherit;
+}
+.chips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.chip {
+  border: 3px solid var(--black);
+  box-shadow: 3px 3px 0 var(--black);
+  padding: 8px 15px;
+  font-size: 15px;
+  font-weight: 900;
+  color: var(--black);
+  background: var(--white);
+  cursor: pointer;
+  font-family: inherit;
+}
+.chip:active {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 var(--black);
+}
+.bet-error {
+  margin: 0;
+  min-height: 18px;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+/* ── ゲームオーバー ── */
+.over-title {
+  margin: 0;
+  font-size: 34px;
+  font-weight: 900;
+  background: var(--black);
+  color: var(--white);
+  border: var(--border);
+  box-shadow: var(--shadow-sm);
+  padding: 8px 6px;
+  transform: rotate(-1.5deg);
+}
+.over-score {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 900;
+}
+.over-score span {
+  font-size: 44px;
+  font-weight: 900;
+  color: var(--accent);
+}
+.over-bet-line {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 900;
+  border: 3px solid var(--black);
+  padding: 6px;
+}
+.over-bet-line.win {
+  background: var(--black);
+  color: var(--white);
+}
+.over-bet-line.lose {
+  background: var(--white);
+  color: var(--accent);
+}
+.over-newbest {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 900;
+  color: var(--white);
+  background: var(--accent);
+  border: 3px solid var(--black);
+  padding: 6px;
+  animation: pop 0.3s ease;
+}
+@keyframes pop {
+  0% { transform: scale(0.7); }
+  60% { transform: scale(1.12); }
+  100% { transform: scale(1); }
+}
+
+/* ── ランキング ── */
+.rank-title {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 900;
+}
+.rank-list {
+  list-style: none;
+  margin: 0;
+  padding: 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 46vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.rank-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 12px;
+  border: 3px solid var(--black);
+  box-shadow: 3px 3px 0 var(--black);
+  background: var(--white);
+}
+.rank-row:nth-child(1) {
+  background: var(--black);
+  color: var(--white);
+}
+.rank-row.rank-me {
+  border-color: var(--accent);
+  box-shadow: 3px 3px 0 var(--accent);
+}
+.rank-pos {
+  font-size: 18px;
+  font-weight: 900;
+  width: 26px;
+}
+.rank-name {
+  flex: 1;
+  font-weight: 900;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+.rank-dist {
+  font-weight: 900;
+}
+.rank-empty {
+  margin: 0;
+  font-weight: 900;
+}
+
+.view-hidden {
+  display: none !important;
+}

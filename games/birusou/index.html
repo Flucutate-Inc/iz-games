@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <title>ビル層</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main class="app">
+      <div class="stage">
+        <canvas id="game"></canvas>
+
+        <!-- 上部 HUD -->
+        <div id="hud" class="hud view-hidden">
+          <span id="score" class="hud-score">0 m</span>
+          <span id="best" class="hud-best">BEST 0 m</span>
+        </div>
+
+        <!-- スタート画面 -->
+        <section id="view-start" class="overlay">
+          <div class="panel">
+            <h1 class="title">ビル層</h1>
+            <p class="subtitle">ビルを駆け、迫る谷をジャンプで飛び越えろ！</p>
+            <button id="start-btn" class="btn btn-primary" type="button">スタート</button>
+            <button id="start-rank-btn" class="btn btn-ghost" type="button">ランキング</button>
+            <p class="hint">SPACE / ↑ / タップ でジャンプ（空中でもう一度＝2段ジャンプ）</p>
+          </div>
+        </section>
+
+        <!-- ゲームオーバー画面 -->
+        <section id="view-over" class="overlay view-hidden">
+          <div class="panel">
+            <h2 id="over-title" class="over-title">転倒！</h2>
+            <p class="over-score"><span id="over-distance">0</span> m</p>
+            <p id="over-newbest" class="over-newbest view-hidden">🏆 自己ベスト更新！</p>
+            <button id="retry-btn" class="btn btn-primary" type="button">もう一度</button>
+            <div class="btn-row">
+              <button id="over-rank-btn" class="btn btn-ghost" type="button">ランキング</button>
+              <button id="over-home-btn" class="btn btn-ghost" type="button">最初へ</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- ランキング画面 -->
+        <section id="view-rank" class="overlay view-hidden">
+          <div class="panel">
+            <h2 class="rank-title">ランキング</h2>
+            <ol id="rank-list" class="rank-list"></ol>
+            <p id="rank-empty" class="rank-empty view-hidden">まだ記録がありません</p>
+            <button id="rank-back-btn" class="btn btn-primary" type="button">もどる</button>
+            <button id="rank-clear-btn" class="btn btn-ghost" type="button">記録を消す</button>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <script src="../../sdk/iz-sdk.js"></script>
+    <script src="./main.js"></script>
+  </body>
+</html>

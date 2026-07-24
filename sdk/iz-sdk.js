@@ -67,6 +67,22 @@
         }
         break;
       }
+      case 'iz:scoreAck': {
+        var ps = pending[data.requestId];
+        if (ps) {
+          delete pending[data.requestId];
+          ps.resolve({ best: data.best, isBest: !!data.isBest });
+        }
+        break;
+      }
+      case 'iz:leaderboard': {
+        var pl = pending[data.requestId];
+        if (pl) {
+          delete pending[data.requestId];
+          pl.resolve(data.entries || []);
+        }
+        break;
+      }
       case 'iz:error': {
         var pe = pending[data.requestId];
         if (pe) {
@@ -115,9 +131,20 @@
     placeBet: function (choice, amount) {
       return request({ type: 'iz:bet', choice: choice, amount: amount });
     },
-    /** 取得金額ランキング上位を取得する。 */
+    /** 取得金額ランキング上位を取得する（賭けゲーム用）。 */
     getRanking: function () {
       return request({ type: 'iz:ranking' });
+    },
+    /**
+     * 距離スコアを共通リーダーボードに送信する（IZ は動かさない）。
+     * score は 0 以上の整数。解決値は { best, isBest }（サーバーが記録した自己ベストと更新有無）。
+     */
+    submitScore: function (score) {
+      return request({ type: 'iz:submitScore', score: Math.max(0, Math.floor(Number(score) || 0)) });
+    },
+    /** 距離スコアの共通リーダーボード上位を取得する（[{ rank, displayName, score }, ...]）。 */
+    getLeaderboard: function () {
+      return request({ type: 'iz:leaderboard' });
     },
   };
 
