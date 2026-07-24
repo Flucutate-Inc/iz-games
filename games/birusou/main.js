@@ -55,11 +55,17 @@
   }
 
   // ── リサイズ ──
+  // 狭い画面（スマホ）ほどズームアウトして、先のビル群が見えるようにする。
+  // ワールドは「論理ビューポート(W,H)」で描画し、キャンバスへは dpr/zoom で縮小転写する。
+  // 物理・距離スコアはすべて論理座標なので、見える範囲だけが変わり挙動は不変。
+  var VIEW_MIN_W = 1000;         // 確保したい最小の横幅（ワールド単位）。狭い画面ほどズームアウト。
   function resize() {
     dpr = Math.min(window.devicePixelRatio || 1, 2);
-    W = canvas.clientWidth; H = canvas.clientHeight;
-    canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    var cw = canvas.clientWidth, ch = canvas.clientHeight;
+    var zoom = clamp(VIEW_MIN_W / cw, 1, 3);
+    W = cw * zoom; H = ch * zoom;
+    canvas.width = Math.round(cw * dpr); canvas.height = Math.round(ch * dpr);
+    ctx.setTransform(dpr / zoom, 0, 0, dpr / zoom, 0, 0);
     minH = H * 0.50; maxH = H * 0.80;
   }
   window.addEventListener('resize', resize);
