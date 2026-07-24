@@ -9,7 +9,7 @@
     return document.getElementById(id);
   };
 
-  var state = { balance: 0, choice: 'heads', minBet: 10, maxBet: 10000, busy: false, spins: 0 };
+  var state = { balance: 0, choice: 'heads', minBet: 10, maxBet: 1000, busy: false, spins: 0 };
 
   var balanceEl = el('balance');
   var resultEl = el('result');
