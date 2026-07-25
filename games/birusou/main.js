@@ -187,35 +187,51 @@
     el('over-distance').textContent = run.score;
     if (host.ready) {
       // ホスト（IZアプリ）があれば共通リーダーボードへ送信。自己ベスト更新はサーバー判定を採用。
+      // ホストが未対応（旧アプリ）/エラーのときはローカル判定にフォールバック。
       el('over-newbest').classList.add('view-hidden');
-      IZ.submitScore(run.score)
+      withTimeout(IZ.submitScore(run.score), 4000)
         .then(function (res) { el('over-newbest').classList.toggle('view-hidden', !(res && res.isBest)); })
-        .catch(function () {});
+        .catch(function () { el('over-newbest').classList.toggle('view-hidden', localRank !== 1); });
     } else {
       el('over-newbest').classList.toggle('view-hidden', localRank !== 1);
     }
     showView('over');
   }
 
+  /** Promise に ms のタイムアウトを付ける。古いホストは新メッセージ（iz:leaderboard 等）を
+   *  無視して応答しないため、解決も拒否もされない Promise を打ち切る必要がある。 */
+  function withTimeout(promise, ms) {
+    return new Promise(function (resolve, reject) {
+      var timer = setTimeout(function () { reject(new Error('timeout')); }, ms);
+      promise.then(
+        function (v) { clearTimeout(timer); resolve(v); },
+        function (e) { clearTimeout(timer); reject(e); }
+      );
+    });
+  }
+
   // ── ランキング描画 ──
   // ホストがあれば共通リーダーボード（全ユーザー）を、無ければ端末ローカルの記録を表示する。
+  // ホストが未対応（旧アプリ）/エラー/空応答のときは端末ローカルにフォールバックする。
   function renderRanking() {
     var empty = el('rank-empty');
     empty.classList.add('view-hidden');
+    var paintLocal = function () {
+      paintRanking(loadRanking(), function (e) { return run && e.t === run.stamp; });
+    };
     if (host.ready) {
       el('rank-list').innerHTML = '';
-      IZ.getLeaderboard()
+      withTimeout(IZ.getLeaderboard(), 4000)
         .then(function (entries) {
+          if (!entries || !entries.length) { paintLocal(); return; } // 共通LB未稼働/無記録 → ローカル
           paintRanking(
-            (entries || []).map(function (e) { return { name: e.displayName, score: e.score }; }),
+            entries.map(function (e) { return { name: e.displayName, score: e.score }; }),
             function (e) { return host.name && e.name === host.name; }
           );
         })
-        .catch(function () {
-          paintRanking(loadRanking(), function (e) { return run && e.t === run.stamp; });
-        });
+        .catch(paintLocal);
     } else {
-      paintRanking(loadRanking(), function (e) { return run && e.t === run.stamp; });
+      paintLocal();
     }
   }
 
