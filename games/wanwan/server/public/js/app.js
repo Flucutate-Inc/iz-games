@@ -1,4 +1,4 @@
-/** 画面遷移とホーム/編成/図鑑/履歴/設定 */
+/** 画面遷移とホーム/編成/図鑑/ガチャ/履歴/設定 */
 (() => {
   let me = null;
   let allPets = [];
@@ -7,8 +7,10 @@
 
   const $ = id => document.getElementById(id);
   const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  // コインは絵文字だと環境により別の記号(月など)に化けるため、CSSアイコンで描く
+  const COIN = '<i class="coin"></i>';
 
-  const screens = ['auth', 'home', 'modes', 'room', 'deck', 'dex', 'ranking', 'history', 'settings', 'matching', 'battle'];
+  const screens = ['auth', 'home', 'modes', 'room', 'deck', 'dex', 'gacha', 'ranking', 'history', 'settings', 'matching', 'battle'];
   function show(name) {
     for (const s of screens) $(`screen-${s}`).classList.toggle('hidden', s !== name);
   }
@@ -21,6 +23,7 @@
     if (name === 'room') $('room-error').textContent = '';
     if (name === 'deck') await loadDeckEditor();
     if (name === 'dex') await loadDex();
+    if (name === 'gacha') await loadGacha();
     if (name === 'ranking') await loadRanking();
     if (name === 'history') await loadHistory();
     if (name === 'settings') loadSettings();
@@ -61,7 +64,7 @@
     allPets = petsRes.pets;
     decks = decksRes.decks;
     $('home-player').innerHTML =
-      `<b>${esc(me.name)}</b> Lv${me.level} <span>🪙${me.coins}</span> <span>⭐${me.rating}</span> <small>${me.wins}勝${me.losses}敗</small>`;
+      `<b>${esc(me.name)}</b> Lv${me.level} <span>${COIN}${me.coins}</span> <span>⭐${me.rating}</span> <small>${me.wins}勝${me.losses}敗</small>`;
     const deck = decks.find(d => d.selected);
     if (deck) {
       const avg = (deck.pets.reduce((a, id) => a + (allPets.find(p => p.id === id)?.cost || 0), 0) / deck.pets.length).toFixed(1);
@@ -99,7 +102,7 @@
         const res = await Net.api('/purchase', { body: { receipt: purchase.receipt } });
         me = res.user;
         $('iz-msg').style.color = 'var(--green)';
-        $('iz-msg').textContent = `${res.coins}🪙 を受け取りました`;
+        $('iz-msg').innerHTML = `${res.coins}${COIN} を受け取りました`;
         await loadHome();
       } catch (e) {
         $('iz-msg').style.color = '';
@@ -369,8 +372,9 @@
     for (const p of allPets) {
       const cell = document.createElement('div');
       cell.className = 'pet-cell' + (p.owned ? '' : ' locked');
-      const lockTag = p.owned ? '' : p.unlock?.initial ? '' : `<span class="locktag">Lv${p.unlock?.level} 🪙${p.unlock?.price}</span>`;
-      cell.innerHTML = `<span class="pcost">${p.cost}</span><img src="/assets/pets/${p.id}/icon.png"><span class="pname">${esc(p.name)}</span>${lockTag}`;
+      const tag = p.owned ? '' : '<span class="locktag">未所有</span>';
+      cell.innerHTML = `<span class="pcost">${p.cost}</span>${rarityBadge(p.rarity)}`
+        + `<img src="/assets/pets/${p.id}/icon.png"><span class="pname">${esc(p.name)}</span>${tag}`;
       cell.onclick = () => showPetDetail(p);
       grid.appendChild(cell);
     }
@@ -382,7 +386,7 @@
     body.innerHTML = `
       <div class="dex-detail-head">
         <img src="/assets/pets/${p.id}/idle.png">
-        <div><h3>${esc(p.name)}</h3><p style="opacity:.8;font-size:.85rem">${esc(p.role)}${p.owned ? '' : ' ・ 未所有'}</p></div>
+        <div><h3>${esc(p.name)} ${rarityBadge(p.rarity)}</h3><p style="opacity:.8;font-size:.85rem">${esc(p.role)}${p.owned ? '' : ' ・ 未所有'}</p></div>
       </div>
       <p style="margin:10px 0;font-size:.9rem">${esc(p.description)}</p>
       <table class="stat-table">
@@ -395,22 +399,23 @@
         <tr><td>タイプ</td><td>${p.movement === 'flying' ? '飛行' : '地上'} / ${p.attackType}</td></tr>
       </table>
       ${petLevelTable(p)}
-      ${!p.owned && !p.unlock?.initial ? `<button class="btn primary big" id="btn-unlock" style="margin-top:12px">解放する(Lv${p.unlock.level}・🪙${p.unlock.price})</button><p id="unlock-error" class="error"></p>` : ''}
+      ${p.owned ? '' : '<button class="btn primary big" id="btn-to-gacha" style="margin-top:12px">ガチャでなかまにする</button>'}
       <button class="btn" id="btn-dex-close" style="margin-top:10px;width:100%">閉じる</button>`;
     $('dex-detail').classList.remove('hidden');
     $('btn-dex-close').onclick = () => $('dex-detail').classList.add('hidden');
-    const unlockBtn = $('btn-unlock');
-    if (unlockBtn) {
-      unlockBtn.onclick = async () => {
-        try {
-          await Net.api(`/pets/${p.id}/unlock`, { body: {} });
-          $('dex-detail').classList.add('hidden');
-          await loadDex();
-        } catch (e) {
-          $('unlock-error').textContent = e.message;
-        }
+    const gachaBtn = $('btn-to-gacha');
+    if (gachaBtn) {
+      gachaBtn.onclick = () => {
+        $('dex-detail').classList.add('hidden');
+        void nav('gacha');
       };
     }
+  }
+
+  /** レアリティのバッジ(図鑑・ガチャ共通) */
+  function rarityBadge(rarity) {
+    if (!rarity) return '';
+    return `<span class="rarity r-${esc(rarity)}">${esc(rarity)}</span>`;
   }
 
   /** ペット詳細の「試合内強化」表(実データから算出) */
@@ -433,6 +438,71 @@
       <tr><td>${isHeal ? '回復量' : '攻撃力'}</td>${atkRow}</tr>
       <tr><td>必要ほね</td>${costRow}</tr></table>
       <p class="terms">強化は試合ごとにリセットされます。</p>`;
+  }
+
+  // ─── ガチャ ─────────────────────────────────────────────────
+  let gachaInfo = null;
+
+  async function loadGacha() {
+    gachaInfo = await Net.api('/gacha');
+    $('gacha-error').textContent = '';
+    $('gacha-coins').innerHTML = `${COIN}${gachaInfo.coins}`;
+    $('btn-gacha-1').innerHTML = `1回ひく <small>${COIN}${gachaInfo.singleCost}</small>`;
+    $('btn-gacha-10').innerHTML = `${gachaInfo.multiCount}回ひく <small>${COIN}${gachaInfo.multiCost}</small>`;
+    $('btn-gacha-1').disabled = gachaInfo.coins < gachaInfo.singleCost;
+    $('btn-gacha-10').disabled = gachaInfo.coins < gachaInfo.multiCost;
+
+    $('gacha-rates').innerHTML = gachaInfo.rarities.map(r => `
+      <tr><td>${rarityBadge(r.id)} ${esc(r.name)}<small style="opacity:.6"> ・ ${r.pets.length}種</small></td>
+      <td>${r.rate}%<small style="opacity:.6"> ・ 重複時 ${COIN}${r.duplicateCoins}</small></td></tr>`).join('');
+    $('gacha-guarantee').textContent = gachaInfo.multiGuaranteeRarity
+      ? `${gachaInfo.multiCount}回ひくと ${gachaInfo.multiGuaranteeRarity} 以上が1回以上でます。所持済みのわんこが出たときはコインが戻ります。`
+      : '所持済みのわんこが出たときはコインが戻ります。';
+
+    $('gacha-pool').innerHTML = gachaInfo.rarities.map(r => `
+      <h4 class="pool-head">${rarityBadge(r.id)} ${esc(r.name)}</h4>
+      <div class="pet-grid">${r.pets.map(p => `
+        <div class="pet-cell${p.owned ? '' : ' locked'}">
+          <span class="pcost">${p.cost}</span>
+          <img src="/assets/pets/${p.id}/icon.png" alt="">
+          <span class="pname">${esc(p.name)}</span>
+          ${p.owned ? '<span class="locktag">所持</span>' : ''}
+        </div>`).join('')}</div>`).join('');
+  }
+
+  $('btn-gacha-1').onclick = () => drawGacha(1);
+  $('btn-gacha-10').onclick = () => drawGacha(gachaInfo?.multiCount || 10);
+
+  async function drawGacha(count) {
+    $('gacha-error').textContent = '';
+    $('btn-gacha-1').disabled = $('btn-gacha-10').disabled = true;
+    try {
+      const res = await Net.api('/gacha/draw', { body: { count } });
+      me = res.user;
+      showGachaResult(res);
+      await loadGacha();
+    } catch (e) {
+      $('gacha-error').textContent = e.message;
+      await loadGacha();
+    }
+  }
+
+  function showGachaResult(res) {
+    const newCount = res.results.filter(r => !r.duplicate).length;
+    const cards = res.results.map((r, i) => `
+      <div class="gacha-card r-${esc(r.rarity)}${r.duplicate ? ' dup' : ''}" style="animation-delay:${i * 90}ms">
+        <span class="rarity r-${esc(r.rarity)}">${esc(r.rarity)}</span>
+        <img src="/assets/pets/${r.petId}/icon.png" alt="">
+        <span class="gname">${esc(r.name)}</span>
+        <span class="gtag">${r.duplicate ? `重複 +${COIN}${r.coins}` : 'NEW!'}</span>
+      </div>`).join('');
+    $('gacha-result-body').innerHTML = `
+      <h3 style="text-align:center">${newCount > 0 ? `${newCount}体が なかまになった!` : 'コインが もどってきた'}</h3>
+      <div class="gacha-cards">${cards}</div>
+      <p class="terms" style="text-align:center">つかったコイン ${COIN}${res.spent}${res.refunded ? ` ・ もどったコイン ${COIN}${res.refunded}` : ''}</p>
+      <button class="btn primary" id="btn-gacha-close" style="margin-top:12px;width:100%">とじる</button>`;
+    $('gacha-result').classList.remove('hidden');
+    $('btn-gacha-close').onclick = () => $('gacha-result').classList.add('hidden');
   }
 
   // ─── ランキング ─────────────────────────────────────────────

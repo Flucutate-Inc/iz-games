@@ -4,7 +4,9 @@
   "description": "わんわん大戦争 ゲームサーバー(API + WebSocket対戦 + 管理画面)",
   "scripts": {
     "start": "node src/index.js",
-    "test": "node test/run-tests.js"
+    "test": "node test/run-tests.js",
+    "test:e2e": "node test/e2e.js",
+    "test:admin": "node test/admin-e2e.js"
   },
   "dependencies": {
     "better-sqlite3": "^11.0.0",

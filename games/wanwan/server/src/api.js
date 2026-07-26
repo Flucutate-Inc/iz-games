@@ -1,7 +1,9 @@
 /** プレイヤー向け REST API */
+const crypto = require('crypto');
 const express = require('express');
 const db = require('./db');
 const balance = require('./balance');
+const gacha = require('./gacha');
 const { register, login, loginWithFirebase, logout, publicUser, requireAuth, httpError } = require('./auth');
 const { verifyIdToken } = require('./firebase-auth');
 const receipts = require('./receipt');
@@ -10,7 +12,8 @@ const router = express.Router();
 
 router.post('/register', (req, res, next) => {
   try {
-    res.json(register(req.body.name, req.body.password));
+    // adminToken は初期管理者を作るときだけ使う(WANWAN_ADMIN_TOKEN と一致した場合のみ)
+    res.json(register(req.body.name, req.body.password, req.body.adminToken));
   } catch (e) { next(e); }
 });
 
@@ -49,7 +52,7 @@ function levelInfo(user) {
   return { current: user.xp, needed: need };
 }
 
-/** 図鑑: 全ペット(未所有も性能閲覧可)+所有状態+解放条件 */
+/** 図鑑: 全ペット(未所有も性能閲覧可)+所有状態 */
 router.get('/pets', requireAuth, (req, res) => {
   const { snapshot } = balance.getPublished();
   const owned = new Set(db.prepare('SELECT pet_id FROM user_pets WHERE user_id = ?').all(req.user.id).map(r => r.pet_id));
@@ -66,25 +69,81 @@ router.get('/pets', requireAuth, (req, res) => {
   });
 });
 
-/** ペット解放購入(レベル条件+コイン) */
-router.post('/pets/:petId/unlock', requireAuth, (req, res, next) => {
+// ─── ガチャ ───────────────────────────────────────────────────
+// 新しいペットはガチャでのみ入手する(コインでの個別購入=解放は廃止)。
+
+/** ガチャの排出率・コスト・ラインナップ */
+router.get('/gacha', requireAuth, (req, res) => {
+  const { id, snapshot } = balance.getPublished();
+  const owned = new Set(db.prepare('SELECT pet_id FROM user_pets WHERE user_id = ?').all(req.user.id).map(r => r.pet_id));
+  const petById = Object.fromEntries(snapshot.pets.map(p => [p.id, p]));
+  const rarities = gacha.rates(snapshot.gacha, snapshot.pets).map(r => ({
+    ...r,
+    pets: r.petIds.map(petId => ({ id: petId, name: petById[petId].name, cost: petById[petId].cost, owned: owned.has(petId) })),
+  }));
+  res.json({
+    singleCost: snapshot.gacha.singleCost,
+    multiCount: snapshot.gacha.multiCount,
+    multiCost: snapshot.gacha.multiCost,
+    multiGuaranteeRarity: snapshot.gacha.multiGuaranteeRarity || null,
+    rarities,
+    coins: req.user.coins,
+    balanceVersionId: id,
+  });
+});
+
+/** ガチャを引く。抽選・コイン増減はすべてサーバーで確定する */
+router.post('/gacha/draw', requireAuth, (req, res, next) => {
   try {
-    const { snapshot } = balance.getPublished();
-    const pet = snapshot.pets.find(p => p.id === req.params.petId && p.released);
-    if (!pet) throw httpError(404, 'ペットが見つかりません');
-    const owned = db.prepare('SELECT 1 FROM user_pets WHERE user_id = ? AND pet_id = ?').get(req.user.id, pet.id);
-    if (owned) throw httpError(409, 'すでに所有しています');
-    const unlock = pet.unlock || {};
-    if (unlock.initial) throw httpError(400, '初期ペットです');
-    if (req.user.level < (unlock.level || 1)) throw httpError(403, `プレイヤーレベル${unlock.level}で解放されます`);
-    const price = unlock.price || 0;
-    if (req.user.coins < price) throw httpError(402, `コインが足りません(必要: ${price})`);
+    const { id: versionId, snapshot } = balance.getPublished();
+    const conf = snapshot.gacha;
+    const count = Number(req.body.count) || 1;
+    const cost = gacha.costFor(conf, count);
+    if (cost == null) throw httpError(400, `引ける回数は1回または${conf.multiCount}回です`);
+    if (req.user.coins < cost) throw httpError(402, `コインが足りません(必要: ${cost})`);
+
+    const owned = db.prepare('SELECT pet_id FROM user_pets WHERE user_id = ?').all(req.user.id).map(r => r.pet_id);
+    const { results, newPetIds, refundCoins } = gacha.draw({
+      gacha: conf,
+      pets: snapshot.pets,
+      owned,
+      count,
+      rng: () => crypto.randomInt(0, 2 ** 30) / 2 ** 30,
+    });
+
     db.transaction(() => {
-      db.prepare('UPDATE users SET coins = coins - ? WHERE id = ?').run(price, req.user.id);
-      db.prepare('INSERT INTO user_pets (user_id, pet_id) VALUES (?, ?)').run(req.user.id, pet.id);
+      db.prepare('UPDATE users SET coins = coins - ? + ? WHERE id = ?').run(cost, refundCoins, req.user.id);
+      const addPet = db.prepare('INSERT INTO user_pets (user_id, pet_id) VALUES (?, ?)');
+      for (const petId of newPetIds) addPet.run(req.user.id, petId);
+      const log = db.prepare(
+        `INSERT INTO gacha_pulls (user_id, balance_version_id, pet_id, rarity, duplicate, coins_spent, coins_refund)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      );
+      results.forEach((r, i) => {
+        log.run(req.user.id, versionId, r.petId, r.rarity, r.duplicate ? 1 : 0, i === 0 ? cost : 0, r.coins);
+      });
     })();
-    res.json({ ok: true, user: publicUser(req.user.id) });
+
+    const petById = Object.fromEntries(snapshot.pets.map(p => [p.id, p]));
+    res.json({
+      results: results.map(r => ({ ...r, name: petById[r.petId].name, cost: petById[r.petId].cost })),
+      spent: cost,
+      refunded: refundCoins,
+      user: publicUser(req.user.id),
+    });
   } catch (e) { next(e); }
+});
+
+/** ガチャ履歴(直近50件) */
+router.get('/gacha/history', requireAuth, (req, res) => {
+  const rows = db.prepare(
+    'SELECT pet_id, rarity, duplicate, coins_refund, created_at FROM gacha_pulls WHERE user_id = ? ORDER BY id DESC LIMIT 50',
+  ).all(req.user.id);
+  res.json({
+    history: rows.map(r => ({
+      petId: r.pet_id, rarity: r.rarity, duplicate: !!r.duplicate, coins: r.coins_refund, at: r.created_at,
+    })),
+  });
 });
 
 /** デッキ一覧 */

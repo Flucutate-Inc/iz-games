@@ -170,6 +170,34 @@ class Client {
   c1.close();
   c2b.close();
 
+  // GACHA-01: 解放APIは廃止され、ペット入手はガチャのみ
+  const removed = await api('/pets/great-dane-king/unlock', { token: u1.token, body: {} });
+  ok(removed.status === 404, 'GACHA-01: 解放API(/pets/:id/unlock)は存在しない');
+
+  const g = await api('/gacha', { token: u1.token });
+  const rateSum = g.rarities.reduce((a, r) => a + r.rate, 0);
+  ok(g.singleCost > 0 && Math.abs(rateSum - 100) < 0.2, 'GACHA-01: コストと排出率(合計100%)を取得できる');
+
+  const beforeCoins = (await api('/me', { token: u1.token })).user.coins;
+  const poor = await api('/gacha/draw', { token: u1.token, body: { count: g.multiCount } });
+  ok(poor.status === 402, 'GACHA-01: コイン不足なら引けない');
+  ok((await api('/gacha/draw', { token: u1.token, body: { count: 3 } })).status === 400, 'GACHA-01: 不正な回数を拒否');
+
+  if (beforeCoins < g.singleCost) {
+    // 公開中のバランス版では新規アカウントが単発を引けない設定になっている
+    console.log(`  - GACHA-01: 抽選の検証はスキップ(所持${beforeCoins} < 単発${g.singleCost})`);
+  } else {
+    const ownedBefore = (await api('/pets', { token: u1.token })).pets.filter(p => p.owned).length;
+    const draw = await api('/gacha/draw', { token: u1.token, body: { count: 1 } });
+    ok(draw.results && draw.results.length === 1 && draw.spent === g.singleCost, 'GACHA-01: サーバーが抽選しコインを消費する');
+    const r = draw.results[0];
+    ok(draw.user.coins === beforeCoins - g.singleCost + draw.refunded, 'GACHA-01: コイン増減が結果と一致');
+    const ownedAfter = (await api('/pets', { token: u1.token })).pets.filter(p => p.owned).length;
+    ok(ownedAfter === ownedBefore + (r.duplicate ? 0 : 1), 'GACHA-01: 新規は所持に加わり、重複は増えない');
+    const gh = await api('/gacha/history', { token: u1.token });
+    ok(gh.history.length >= 1 && gh.history[0].petId === r.petId, 'LOG-01: ガチャ履歴に記録される');
+  }
+
   console.log(`\n${passed} passed / ${failed} failed`);
   process.exit(failed ? 1 : 0);
 })().catch(e => {

@@ -6,6 +6,7 @@ for (const f of ['test.db', 'test.db-wal', 'test.db-shm']) {
 }
 
 const assert = require('assert');
+require('../src/db').init(); // スキーマ+シード(Workers では DO 側で呼ぶ)
 const engine = require('../src/engine');
 const snapshot = JSON.parse(fs.readFileSync(require('path').join(__dirname, '..', '..', 'data', 'balance-initial.json'), 'utf8'));
 
@@ -300,6 +301,239 @@ test('強化は試合ごとにリセットされる(永続育成差なし)', () 
   const fresh = newBattle();
   assert.deepEqual(fresh.players[0].upgrades.pets, {});
 });
+
+// ── ガチャ抽選 ──
+console.log('gacha tests:');
+{
+  const gacha = require('../src/gacha');
+  const conf = snapshot.gacha;
+  // 決定的な擬似乱数(テストの再現性のため)
+  const seqRng = values => { let i = 0; return () => values[i++ % values.length]; };
+
+  test('ガチャ設定が初期バランスに存在する', () => {
+    assert.ok(conf.singleCost > 0 && conf.multiCount > 1 && conf.rarities.length > 0);
+    for (const p of snapshot.pets) {
+      assert.ok(conf.rarities.some(r => r.id === p.rarity), `${p.id} のレアリティが未定義`);
+    }
+  });
+
+  test('コスト: 1回・多連のみ受け付ける', () => {
+    assert.equal(gacha.costFor(conf, 1), conf.singleCost);
+    assert.equal(gacha.costFor(conf, conf.multiCount), conf.multiCost);
+    assert.equal(gacha.costFor(conf, 3), null);
+  });
+
+  test('排出率の合計は100%', () => {
+    const total = gacha.rates(conf, snapshot.pets).reduce((a, r) => a + r.rate, 0);
+    assert.ok(Math.abs(total - 100) < 0.2, `total=${total}`);
+  });
+
+  test('未所有が出れば NEW、所持済みなら重複としてコイン還元', () => {
+    const all = snapshot.pets.map(p => p.id);
+    const dup = gacha.draw({ gacha: conf, pets: snapshot.pets, owned: all, count: 5, rng: seqRng([0.1, 0.5]) });
+    assert.equal(dup.newPetIds.length, 0);
+    assert.ok(dup.results.every(r => r.duplicate));
+    assert.equal(dup.refundCoins, dup.results.reduce((a, r) => a + r.coins, 0));
+    assert.ok(dup.refundCoins > 0);
+
+    const fresh = gacha.draw({ gacha: conf, pets: snapshot.pets, owned: [], count: 1, rng: seqRng([0.1, 0.5]) });
+    assert.equal(fresh.results[0].duplicate, false);
+    assert.equal(fresh.refundCoins, 0);
+    assert.equal(fresh.newPetIds.length, 1);
+  });
+
+  test('同じ抽選内で同じペットが2回出たら2回目は重複', () => {
+    // rng が常に同じ値 → 同じレアリティの同じ添字を引き続ける
+    const r = gacha.draw({ gacha: conf, pets: snapshot.pets, owned: [], count: 3, rng: () => 0 });
+    assert.equal(new Set(r.results.map(x => x.petId)).size, 1);
+    assert.equal(r.newPetIds.length, 1);
+    assert.equal(r.results.filter(x => x.duplicate).length, 2);
+  });
+
+  test(`${snapshot.gacha.multiCount}連は ${snapshot.gacha.multiGuaranteeRarity} 以上が1回以上でる`, () => {
+    const minRank = gacha.rarityRank(conf, conf.multiGuaranteeRarity);
+    for (let seed = 0; seed < 20; seed++) {
+      // 常に最低レアリティを引く rng でも確定枠が働くこと
+      const r = gacha.draw({ gacha: conf, pets: snapshot.pets, owned: [], count: conf.multiCount, rng: () => (seed % 19) / 20 });
+      assert.ok(r.results.some(x => gacha.rarityRank(conf, x.rarity) >= minRank), `seed=${seed}`);
+    }
+  });
+
+  test('未公開(released=false)のペットは抽選されない', () => {
+    const pets = snapshot.pets.map(p => (p.id === 'great-dane-king' ? { ...p, released: false } : p));
+    const pool = gacha.poolByRarity(conf, pets);
+    assert.ok(!Object.values(pool).flat().includes('great-dane-king'));
+  });
+
+  test('バランス検証: gacha 欠落・不正レアリティを検出', () => {
+    const balance = require('../src/balance');
+    const noGacha = { ...snapshot, gacha: undefined };
+    assert.ok(balance.validateSnapshot(noGacha).errors.some(e => e.includes('gacha')));
+    const badRarity = { ...snapshot, pets: snapshot.pets.map((p, i) => (i === 0 ? { ...p, rarity: 'XX' } : p)) };
+    assert.ok(balance.validateSnapshot(badRarity).errors.some(e => e.includes('rarity')));
+    assert.equal(balance.validateSnapshot(snapshot).errors.length, 0);
+  });
+}
+
+// ── アビリティ(カタログ+検証+エンジン実装) ──
+console.log('ability tests:');
+{
+  const abilities = require('../src/abilities');
+  const balance = require('../src/balance');
+
+  test('カタログの型はすべてエンジンに実装がある', () => {
+    const src = fs.readFileSync(require('path').join(__dirname, '..', 'src', 'engine.js'), 'utf8');
+    for (const a of abilities.ABILITIES) {
+      assert.ok(src.includes(`'${a.type}'`), `engine.js に ${a.type} の実装がありません`);
+    }
+  });
+
+  test('データのアビリティはすべてカタログに存在する', () => {
+    for (const p of snapshot.pets) {
+      assert.deepEqual(abilities.validateAbilities(p.id, p.abilities), [], `${p.id}`);
+    }
+  });
+
+  test('未実装の型・範囲外・型違いを検出する', () => {
+    assert.ok(abilities.validateAbilities('x', [{ type: 'nope' }])[0].includes('未実装'));
+    assert.ok(abilities.validateAbilities('x', [{ type: 'firstStrikeMultiplier', amount: 999 }])[0].includes('範囲外'));
+    assert.ok(abilities.validateAbilities('x', [{ type: 'firstStrikeMultiplier' }])[0].includes('数値'));
+    assert.ok(abilities.validateAbilities('x', [{ type: 'auraAttackBuff', amount: 0.1, radius: 10, stacking: 'yes' }])[0].includes('true/false'));
+  });
+
+  test('既定値つきでアビリティを生成できる', () => {
+    const ab = abilities.makeDefault('damageReduction');
+    assert.equal(ab.trigger, 'onSpawn');
+    assert.ok(ab.amount > 0 && ab.duration > 0);
+    assert.deepEqual(abilities.validateAbilities('x', [ab]), []);
+  });
+
+  test('出撃時の被ダメージ軽減がエンジンで効く(ブルドッグ)', () => {
+    const s = newBattle(DECK6, DECK6, 7);
+    const pet = s.petsById.bulldog;
+    const ab = pet.abilities.find(a => a.type === 'damageReduction');
+    s.players[0].bone = 10;
+    s.players[0].hand = ['bulldog', ...s.players[0].hand.filter(id => id !== 'bulldog')].slice(0, 4);
+    assert.ok(engine.spawn(s, 0, 'bulldog', 'top').ok);
+    run(s, pet.spawnDelay + 0.1);
+    const unit = s.units.find(u => u.petId === 'bulldog');
+    assert.ok(unit, 'ユニットが出撃していない');
+    const cut = unit.buffs.find(b => b.kind === 'dmgcut');
+    assert.ok(cut && Math.abs(cut.amount - ab.amount) < 1e-9, '軽減バフが付与されていない');
+    // 軽減が切れたあとは消える
+    run(s, ab.duration + 0.5);
+    assert.ok(!s.units.find(u => u.petId === 'bulldog')?.buffs.some(b => b.kind === 'dmgcut'), '軽減が持続時間を超えて残っている');
+  });
+
+  test('スナップショット検証がアビリティ・初期ペット・回復量まで見る', () => {
+    const bad = JSON.parse(JSON.stringify(snapshot));
+    bad.pets[0].abilities = [{ type: 'unknownAbility' }];
+    assert.ok(balance.validateSnapshot(bad).errors.some(e => e.includes('未実装')));
+
+    const bad2 = JSON.parse(JSON.stringify(snapshot));
+    bad2.progression.initialPets = ['not-a-pet', 'mame-shiba', 'bulldog', 'dachs-sniper'];
+    assert.ok(balance.validateSnapshot(bad2).errors.some(e => e.includes('initialPets')));
+
+    const bad3 = JSON.parse(JSON.stringify(snapshot));
+    const healer = bad3.pets.find(p => p.attackType === 'heal');
+    delete healer.healPower;
+    assert.ok(balance.validateSnapshot(bad3).errors.some(e => e.includes('healPower')));
+  });
+}
+
+// ── バージョンのライフサイクル(予約・削除・入出力) ──
+console.log('version lifecycle tests:');
+{
+  const balance = require('../src/balance');
+  const db = require('../src/db');
+  const adminId = db.prepare("INSERT INTO users (name, pass_hash, salt) VALUES ('lifecycle', '', '') RETURNING id").get().id;
+
+  test('予約 → 時刻経過で自動公開される', () => {
+    const id = balance.createDraft(adminId, null, 'scheduled-test');
+    balance.schedule(id, new Date(Date.now() + 1000).toISOString());
+    assert.equal(balance.getVersion(id).status, 'scheduled');
+    assert.deepEqual(balance.publishDue(Date.now()), [], '時刻前に公開されている');
+    const published = balance.publishDue(Date.now() + 2000);
+    assert.deepEqual(published, [id]);
+    assert.equal(balance.getPublished().id, id);
+    assert.equal(balance.getVersion(id).scheduled_at, null);
+  });
+
+  test('過去日時の予約と、予約の取り消し', () => {
+    const id = balance.createDraft(adminId, null, 'cancel-test');
+    assert.throws(() => balance.schedule(id, '2000-01-01T00:00:00Z'), /過去/);
+    balance.schedule(id, new Date(Date.now() + 3600000).toISOString());
+    balance.cancelSchedule(id);
+    assert.equal(balance.getVersion(id).status, 'draft');
+    assert.throws(() => balance.cancelSchedule(id), /予約されていません/);
+  });
+
+  test('下書きは削除でき、公開中の版は削除できない', () => {
+    const id = balance.createDraft(adminId, null, 'delete-test');
+    balance.deleteVersion(id);
+    assert.equal(balance.getVersion(id), null);
+    assert.throws(() => balance.deleteVersion(balance.getPublished().id), /削除できません/);
+  });
+
+  test('インポートは検証を通ったものだけ下書きになる', () => {
+    const good = balance.importSnapshot(adminId, snapshot, 'imported');
+    assert.ok(good.ok && balance.getVersion(good.id).status === 'draft');
+    const bad = balance.importSnapshot(adminId, { pets: [] }, 'broken');
+    assert.ok(!bad.ok && bad.errors.length > 0);
+  });
+
+  test('ラベル変更と、版一覧に作成者・予約が出る', () => {
+    const id = balance.createDraft(adminId, null, '');
+    balance.setLabel(id, 'ラベル変更');
+    const row = balance.listVersions().find(v => v.id === id);
+    assert.equal(row.label, 'ラベル変更');
+    assert.equal(row.created_by_name, 'lifecycle');
+    assert.ok('scheduled_at' in row);
+  });
+}
+
+// ── 管理者の決まり方 ──
+console.log('admin bootstrap tests:');
+{
+  const db = require('../src/db');
+  const auth = require('../src/auth');
+  const isAdmin = name => db.prepare('SELECT is_admin FROM users WHERE name = ?').get(name).is_admin;
+
+  test('WANWAN_ADMIN_TOKEN 未設定なら最初の登録者が管理者(ローカル検証用)', () => {
+    delete process.env.WANWAN_ADMIN_TOKEN;
+    db.prepare('DELETE FROM sessions').run();
+    db.prepare('DELETE FROM decks').run();
+    db.prepare('DELETE FROM user_pets').run();
+    db.prepare('DELETE FROM users').run();
+    auth.register('firstuser', 'password1');
+    auth.register('seconduser', 'password1');
+    assert.equal(isAdmin('firstuser'), 1);
+    assert.equal(isAdmin('seconduser'), 0);
+  });
+
+  test('WANWAN_ADMIN_TOKEN 設定時はトークン一致の登録だけが管理者(公開URL向け)', () => {
+    process.env.WANWAN_ADMIN_TOKEN = 'super-secret-token';
+    auth.register('stranger1', 'password1');                      // トークンなし
+    auth.register('stranger2', 'password1', 'wrong-token-value'); // 誤ったトークン(長さ違い)
+    auth.register('stranger3', 'password1', 'super-secret-tokeN'); // 1文字違い(長さ同じ)
+    auth.register('realowner', 'password1', 'super-secret-token');
+    assert.equal(isAdmin('stranger1'), 0);
+    assert.equal(isAdmin('stranger2'), 0);
+    assert.equal(isAdmin('stranger3'), 0);
+    assert.equal(isAdmin('realowner'), 1);
+  });
+
+  test('WANWAN_ADMIN_TOKEN 設定中は「最初の登録者」ルールが無効になる', () => {
+    process.env.WANWAN_ADMIN_TOKEN = 'another-secret';
+    db.prepare('DELETE FROM sessions').run();
+    db.prepare('DELETE FROM decks').run();
+    db.prepare('DELETE FROM user_pets').run();
+    db.prepare('DELETE FROM users').run();
+    auth.register('firstcomer', 'password1'); // DBが空でもトークンなしなら管理者にならない
+    assert.equal(isAdmin('firstcomer'), 0);
+    delete process.env.WANWAN_ADMIN_TOKEN;
+  });
+}
 
 // ── Firebase ID トークン検証(IZ 自動ログイン用) ──
 (async () => {

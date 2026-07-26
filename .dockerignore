@@ -1,0 +1,12 @@
+# イメージへ入れないもの(ビルドコンテキストはリポジトリルート)
+.git
+.github
+**/node_modules
+**/*.db
+**/*.db-wal
+**/*.db-shm
+games/wanwan/tools
+games/wanwan/design
+games/wanwan/server/test
+**/_*_raw.png
+**/_*_raw.mp4

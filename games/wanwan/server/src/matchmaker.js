@@ -38,6 +38,7 @@ function makeEntry(user, ws) {
 }
 
 function joinQueue(user, ws) {
+  startPump();
   if (userRoom.has(user.id)) return { error: '対戦中です' };
   if (queue.some(e => e.userId === user.id)) return { error: 'すでにマッチング中です' };
   const entry = makeEntry(user, ws);
@@ -80,7 +81,17 @@ function pump() {
     }
   }
 }
-setInterval(pump, 1000).unref();
+/**
+ * キュー監視の開始(1秒ごと)。
+ * Cloudflare Workers はモジュール読み込み時(グローバルスコープ)でのタイマー設定を禁止しているため、
+ * 最初にキュー操作が行われたときに遅延起動する。Node ではプロセス終了を妨げないよう unref する。
+ */
+let pumpTimer = null;
+function startPump() {
+  if (pumpTimer) return;
+  pumpTimer = setInterval(pump, 1000);
+  if (pumpTimer && typeof pumpTimer.unref === 'function') pumpTimer.unref();
+}
 
 function createRoomCode(user, ws) {
   if (userRoom.has(user.id)) return { error: '対戦中です' };
@@ -147,4 +158,28 @@ function roomOf(userId) {
   return userRoom.get(userId) || null;
 }
 
-module.exports = { joinQueue, leaveQueue, createRoomCode, joinRoomCode, startPractice, roomOf, activeRooms };
+/** 管理画面の稼働状況用: 待機列(あいことば待ちを除く) */
+function queueInfo() {
+  const now = Date.now();
+  return queue.map(e => ({
+    userId: e.userId,
+    name: e.name,
+    rating: e.rating,
+    waitSec: Math.round((now - e.joinedAt) / 1000),
+  }));
+}
+
+/** 管理画面の稼働状況用: 発行済みのあいことば(コードは伏せる) */
+function roomCodeInfo() {
+  const now = Date.now();
+  return [...roomCodes.values()].map(e => ({
+    userId: e.userId,
+    name: e.name,
+    waitSec: Math.round((now - e.joinedAt) / 1000),
+  }));
+}
+
+module.exports = {
+  joinQueue, leaveQueue, createRoomCode, joinRoomCode, startPractice, roomOf,
+  activeRooms, queueInfo, roomCodeInfo, startPump,
+};

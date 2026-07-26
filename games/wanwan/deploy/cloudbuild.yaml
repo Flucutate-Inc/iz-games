@@ -1,0 +1,62 @@
+# わんわん大戦争サーバーのビルド+デプロイ(Cloud Build)。
+# 実行はリポジトリルートから:
+#   gcloud builds submit --config games/wanwan/deploy/cloudbuild.yaml \
+#     --substitutions=_REGION=asia-northeast1,_SERVICE=wanwan,_BUCKET=gs://<bucket>/wanwan
+substitutions:
+  _REGION: asia-northeast1
+  _SERVICE: wanwan
+  _REPO: wanwan
+  _BUCKET: '' # gs://<bucket>/wanwan (空なら永続化なし)
+  _SERVICE_ACCOUNT: '' # Cloud Run 実行SA(空ならデフォルト)
+  _ADMIN_TOKEN: '' # 初期管理者を作るための秘密トークン。作成後は外すこと
+
+steps:
+  - id: build
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - games/wanwan/Dockerfile
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:$BUILD_ID
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:latest
+      - .
+
+  - id: push
+    name: gcr.io/cloud-builders/docker
+    args: [push, --all-tags, '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}']
+
+  - id: deploy
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -e
+        # 単一プロセス前提(対戦ルームはメモリ上・SQLiteは1インスタンス)のため max-instances=1。
+        #
+        # 無料枠に収めるため min-instances=0(ゼロスケール)＋CPUはリクエスト中のみ割り当て。
+        # WebSocket 接続は「実行中のリクエスト」なので、対戦中はCPUが割り当てられ
+        # 20Hzの戦闘ループも動く。誰も接続していない間だけ停止し、課金も止まる。
+        # 常時起動にしたい場合は --min-instances=1 --no-cpu-throttling を付ける(有料)。
+        FLAGS="--region=${_REGION} --platform=managed --allow-unauthenticated \
+          --min-instances=0 --max-instances=1 --concurrency=250 \
+          --cpu=1 --memory=512Mi --timeout=3600 \
+          --port=8080 --set-env-vars=NODE_ENV=production,WANWAN_DB=/data/wanwan.db"
+        if [ -n "${_BUCKET}" ]; then
+          FLAGS="$FLAGS --set-env-vars=LITESTREAM_REPLICA_URL=${_BUCKET}"
+        fi
+        if [ -n "${_ADMIN_TOKEN}" ]; then
+          FLAGS="$FLAGS --set-env-vars=^@^WANWAN_ADMIN_TOKEN=${_ADMIN_TOKEN}"
+        fi
+        if [ -n "${_SERVICE_ACCOUNT}" ]; then
+          FLAGS="$FLAGS --service-account=${_SERVICE_ACCOUNT}"
+        fi
+        gcloud run deploy ${_SERVICE} \
+          --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:$BUILD_ID $FLAGS
+
+images:
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:latest
+options:
+  logging: CLOUD_LOGGING_ONLY
