@@ -21,9 +21,14 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 
 # litestream(SQLite を継続的にオブジェクトストレージへ複製するサイドカー)
+# 配布物の差し替え検知のため SHA-256 を固定して検証する
 ARG LITESTREAM_VERSION=0.3.13
-RUN curl -fsSL "https://github.com/benbjohnson/litestream/releases/download/v${LITESTREAM_VERSION}/litestream-v${LITESTREAM_VERSION}-linux-amd64.tar.gz" \
-  | tar -xz -C /usr/local/bin litestream
+ARG LITESTREAM_SHA256=eb75a3de5cab03875cdae9f5f539e6aedadd66607003d9b1e7a9077948818ba0
+RUN curl -fsSL -o /tmp/litestream.tar.gz \
+    "https://github.com/benbjohnson/litestream/releases/download/v${LITESTREAM_VERSION}/litestream-v${LITESTREAM_VERSION}-linux-amd64.tar.gz" \
+  && echo "${LITESTREAM_SHA256}  /tmp/litestream.tar.gz" | sha256sum -c - \
+  && tar -xz -C /usr/local/bin -f /tmp/litestream.tar.gz litestream \
+  && rm /tmp/litestream.tar.gz
 
 WORKDIR /app
 COPY --from=deps /app/node_modules ./games/wanwan/server/node_modules
@@ -33,8 +38,12 @@ COPY games/wanwan/assets ./games/wanwan/assets
 COPY sdk ./sdk
 COPY games/wanwan/deploy/litestream.yml /etc/litestream.yml
 COPY games/wanwan/deploy/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh && mkdir -p /data
+RUN chmod +x /usr/local/bin/entrypoint.sh \
+  && mkdir -p /data \
+  && chown -R node:node /data
 
 WORKDIR /app/games/wanwan/server
+# node ユーザーで実行(SQLite の書き込み先 /data のみ書ければよい)
+USER node
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

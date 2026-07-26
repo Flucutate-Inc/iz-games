@@ -10,8 +10,9 @@ mkdir -p "$(dirname "$DB_PATH")"
 
 if [ -n "$LITESTREAM_REPLICA_URL" ]; then
   echo "[entrypoint] litestream restore: $LITESTREAM_REPLICA_URL"
-  litestream restore -if-db-not-exists -if-replica-exists -o "$DB_PATH" "$LITESTREAM_REPLICA_URL" || \
-    echo "[entrypoint] 復元対象なし(初回起動として続行)"
+  # -if-replica-exists があるので「複製がまだ無い初回起動」は正常終了する。
+  # 認証エラー・通信エラー・破損はそのまま失敗させる(握りつぶすとデータを失う)。
+  litestream restore -if-db-not-exists -if-replica-exists -o "$DB_PATH" "$LITESTREAM_REPLICA_URL"
   exec litestream replicate -exec "node src/index.js" "$DB_PATH" "$LITESTREAM_REPLICA_URL"
 fi
 

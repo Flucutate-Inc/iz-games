@@ -11,6 +11,10 @@
 set -euo pipefail
 
 PROJECT="${PROJECT:-$(gcloud config get-value project 2>/dev/null)}"
+if [ -z "$PROJECT" ] || [ "$PROJECT" = "(unset)" ]; then
+  echo "PROJECT を指定するか、gcloud config set project <project-id> を実行してください(例: iz-app-6e1d5)。" >&2
+  exit 2
+fi
 REGION="${REGION:-asia-northeast1}"
 SERVICE="${SERVICE:-wanwan}"
 REPO="${REPO:-wanwan}"
@@ -39,6 +43,18 @@ gcloud iam service-accounts describe "$RUN_SA" --project "$PROJECT" >/dev/null 2
   gcloud iam service-accounts create "${RUN_SA%%@*}" --display-name="wanwan Cloud Run" --project "$PROJECT"
 gcloud storage buckets add-iam-policy-binding "gs://${BUCKET_NAME}" \
   --member="serviceAccount:${RUN_SA}" --role=roles/storage.objectAdmin --project "$PROJECT" >/dev/null
+
+echo "▶ Cloud Build 実行SAの権限を確認"
+PROJECT_NUMBER="$(gcloud projects describe "$PROJECT" --format='value(projectNumber)')"
+cat <<NOTE
+  ビルド実行SAには次の権限が必要です(不足していると初回デプロイが失敗します)。
+  付与コマンドは games/wanwan/deploy/README.md を参照してください。
+    - roles/artifactregistry.writer  (イメージのpush)
+    - roles/run.admin               (Cloud Runへのデプロイ)
+    - roles/iam.serviceAccountUser  (実行SA ${RUN_SA} の利用)
+  対象SA: ${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com
+          または ${PROJECT_NUMBER}-compute@developer.gserviceaccount.com
+NOTE
 
 echo "▶ ビルド + デプロイ"
 cd "$ROOT"
