@@ -1,0 +1,14 @@
+{
+  "name": "wanwan-server",
+  "private": true,
+  "description": "わんわん大戦争 ゲームサーバー(API + WebSocket対戦 + 管理画面)",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node test/run-tests.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.0.0",
+    "express": "^4.19.0",
+    "ws": "^8.18.0"
+  }
+}

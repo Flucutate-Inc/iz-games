@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>わんわん大戦争 管理画面</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  /* 管理画面は情報密度優先。トークンは共通デザインシステムを使う */
+  body { padding: var(--s4); image-rendering: auto; background: var(--bg); }
+  .admin-wrap { max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: var(--s4); }
+  .admin-wrap > .row:first-child { align-items: center; }
+  table.admin { width: 100%; border-collapse: collapse; font-size: var(--t-cap); }
+  table.admin th, table.admin td { border: 1px solid var(--line); padding: var(--s2); text-align: left; }
+  table.admin th { background: rgba(0,0,0,0.3); position: sticky; top: 0; color: var(--text-2); }
+  table.admin input { width: 76px; min-height: 32px; padding: 0 var(--s2); font-size: var(--t-cap); }
+  .badge { padding: 2px 10px; border-radius: var(--r-full); font-size: 11px; font-weight: 700; }
+  .badge.published { background: var(--green); color: #06290f; }
+  .badge.draft { background: var(--accent); color: var(--accent-ink); }
+  .badge.testing { background: var(--blue); color: #04213d; }
+  .badge.archived, .badge.rolled_back { background: var(--surface-2); color: var(--text-2); }
+  .row { display: flex; gap: var(--s2); align-items: center; flex-wrap: wrap; }
+  .row > input { width: auto; flex: 1 1 180px; }
+  .scroll { max-height: 480px; overflow: auto; border-radius: var(--r-sm); }
+  h1 { font-size: var(--t-title); }
+  h2 { font-size: var(--t-body); margin-bottom: var(--s2); }
+  h3 { font-size: var(--t-cap); color: var(--text-2); }
+  .ok { color: var(--green); } .warn { color: var(--accent); }
+  .diff-list { font-size: var(--t-cap); max-height: 220px; overflow: auto; background: rgba(0,0,0,0.3); padding: var(--s3); border-radius: var(--r-sm); }
+  #rules-fields { gap: var(--s3); }
+  #rules-fields label { flex: 0 0 auto; }
+  #rules-fields input { width: 110px; }
+</style>
+</head>
+<body>
+<div class="admin-wrap">
+  <div class="row">
+    <h1>🛠 わんわん大戦争 管理画面</h1>
+    <span id="admin-user" style="margin-left:auto"></span>
+    <a href="/" class="btn small">ゲームへ</a>
+  </div>
+
+  <div class="card" id="admin-login-card">
+    <h2>管理者ログイン</h2>
+    <div class="row">
+      <input id="a-name" placeholder="表示名">
+      <input id="a-pass" type="password" placeholder="パスワード">
+      <button id="a-login" class="btn primary">ログイン</button>
+      <span id="a-error" class="error"></span>
+    </div>
+    <p class="terms">最初に登録されたアカウントが管理者になります。</p>
+  </div>
+
+  <div id="admin-main" class="hidden" style="display:flex;flex-direction:column;gap:var(--s4)">
+
+    <div class="card">
+      <h2>バランスバージョン</h2>
+      <div class="row" style="margin-bottom:var(--s2)">
+        <button id="btn-new-draft" class="btn">現行版から下書き作成</button>
+        <input id="draft-label" placeholder="ラベル(例: v1.1調整)">
+        <input id="draft-reason" placeholder="変更理由(監査ログ)">
+      </div>
+      <div class="scroll"><table class="admin" id="version-table"></table></div>
+    </div>
+
+    <div class="card hidden" id="editor-card">
+      <h2>版の編集: <span id="edit-vid"></span></h2>
+      <div class="row" style="margin-bottom:var(--s2)">
+        <button id="btn-save-draft" class="btn primary">保存(バリデーション)</button>
+        <button id="btn-validate" class="btn">検証のみ</button>
+        <button id="btn-diff" class="btn">現行版との差分</button>
+        <button id="btn-testing" class="btn">テスト反映</button>
+        <button id="btn-publish" class="btn">本番公開</button>
+        <span id="edit-msg"></span>
+      </div>
+      <div id="diff-box" class="diff-list hidden"></div>
+      <h3 style="margin:var(--s3) 0 var(--s2)">試合ルール・施設</h3>
+      <div class="row" id="rules-fields"></div>
+      <h3 style="margin:var(--s3) 0 var(--s2)">ペット(主要値)</h3>
+      <div class="scroll"><table class="admin" id="pet-table"></table></div>
+    </div>
+
+    <div class="card">
+      <h2>アカウント運用</h2>
+      <div class="row" style="margin-bottom:var(--s2)">
+        <input id="user-q" placeholder="名前で検索">
+        <button id="btn-user-search" class="btn">検索</button>
+      </div>
+      <div class="scroll"><table class="admin" id="user-table"></table></div>
+    </div>
+
+    <div class="card">
+      <h2>分析(ペット採用率・勝率)</h2>
+      <button id="btn-stats" class="btn" style="margin-bottom:var(--s2)">更新</button>
+      <div class="scroll"><table class="admin" id="stats-table"></table></div>
+    </div>
+
+    <div class="card">
+      <h2>監査ログ</h2>
+      <button id="btn-audit" class="btn" style="margin-bottom:var(--s2)">更新</button>
+      <div class="scroll"><table class="admin" id="audit-table"></table></div>
+    </div>
+  </div>
+</div>
+<script src="js/net.js"></script>
+<script src="js/admin.js"></script>
+</body>
+</html>

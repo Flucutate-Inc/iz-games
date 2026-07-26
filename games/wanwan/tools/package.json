@@ -1,0 +1,12 @@
+{
+  "name": "wanwan-asset-tools",
+  "private": true,
+  "description": "わんわん大戦争の素材生成ツール(Gemini 画像生成 + sharp 後処理)。ゲーム本体からは参照されない。",
+  "scripts": {
+    "generate": "node generate-assets.js"
+  },
+  "dependencies": {
+    "google-auth-library": "^10.9.1",
+    "sharp": "^0.33.0"
+  }
+}

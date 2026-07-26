@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>わんわん大戦争</title>
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="/assets/ui/icon-bone.png">
+</head>
+<body>
+
+<!-- 認証 -->
+<section id="screen-auth" class="screen">
+  <div class="auth-box">
+    <img class="title-logo" src="/assets/ui/title-logo.png" alt="わんわん大戦争">
+    <div class="card">
+      <div class="tabs">
+        <button id="tab-login" class="tab active">ログイン</button>
+        <button id="tab-register" class="tab">アカウント作成</button>
+      </div>
+      <label>表示名<input id="auth-name" maxlength="16" autocomplete="username"></label>
+      <label>パスワード<input id="auth-pass" type="password" autocomplete="current-password"></label>
+      <button id="auth-submit" class="btn primary">ログイン</button>
+      <p id="auth-error" class="error"></p>
+      <p class="terms">はじめると<a href="#" onclick="alert('利用規約(初期版プレースホルダー)');return false">利用規約</a>に同意したことになります</p>
+    </div>
+  </div>
+</section>
+
+<!-- ホーム -->
+<section id="screen-home" class="screen hidden home-screen">
+  <header class="home-head">
+    <img class="home-logo" src="/assets/ui/title-logo.png" alt="わんわん大戦争">
+    <div id="home-player" class="player-chip"></div>
+  </header>
+
+  <div class="home-body">
+    <div class="panel deck-panel">
+      <div class="panel-head">
+        <span class="panel-title">🦴 デッキ</span>
+        <button class="btn small nav" data-nav="deck">編集</button>
+      </div>
+      <div id="home-deck-summary" class="deck-summary"></div>
+    </div>
+
+    <div class="panel iz-panel hidden" id="iz-shop">
+      <div class="panel-head"><span class="panel-title">🪙 コインを購入</span></div>
+      <p class="terms">IZ を使ってコインを購入できます。コインは新しいペットの解放に使えます。</p>
+      <div class="iz-row">
+        <button class="btn iz-buy" data-iz="10">10 IZ<small>→ 100🪙</small></button>
+        <button class="btn iz-buy" data-iz="50">50 IZ<small>→ 500🪙</small></button>
+        <button class="btn iz-buy" data-iz="100">100 IZ<small>→ 1000🪙</small></button>
+      </div>
+      <p id="iz-msg" class="error"></p>
+    </div>
+
+    <div class="home-spacer"></div>
+
+    <button id="btn-start" class="start-btn">たたかう</button>
+    <p id="home-error" class="error"></p>
+
+    <div class="panel other-panel">
+      <div class="panel-head"><span class="panel-title">その他</span></div>
+      <div class="other-row">
+        <button class="menu-tile nav" data-nav="ranking"><span class="tile-ico">🏆</span>ランキング</button>
+        <button class="menu-tile nav" data-nav="dex"><span class="tile-ico">📖</span>図鑑</button>
+        <button class="menu-tile nav" data-nav="history"><span class="tile-ico">📜</span>対戦履歴</button>
+        <button class="menu-tile nav" data-nav="settings"><span class="tile-ico">⚙️</span>設定</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 対戦モード選択 -->
+<section id="screen-modes" class="screen hidden home-screen">
+  <header class="home-head">
+    <button class="btn back" data-nav="home">← もどる</button>
+    <h2 class="mode-title">たたかう</h2>
+  </header>
+  <div class="mode-list">
+    <button id="btn-random-match" class="mode-btn primary">
+      <span class="mode-ico">⚔️</span>
+      <span><b>ランダムマッチ</b><small>近いレートの相手と対戦(報酬あり)</small></span>
+    </button>
+    <button id="btn-room-mode" class="mode-btn">
+      <span class="mode-ico">🔑</span>
+      <span><b>ルームマッチ</b><small>あいことばで友達と対戦</small></span>
+    </button>
+    <button id="btn-practice" class="mode-btn">
+      <span class="mode-ico">🤖</span>
+      <span><b>CPUマッチ</b><small>練習用(報酬・レート変動なし)</small></span>
+    </button>
+    <p id="modes-error" class="error"></p>
+  </div>
+</section>
+
+<!-- ルームマッチ -->
+<section id="screen-room" class="screen hidden home-screen">
+  <header class="home-head">
+    <button class="btn back" data-nav="modes">← もどる</button>
+    <h2 class="mode-title">ルームマッチ</h2>
+  </header>
+  <div class="mode-list">
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">あいことばを作る</span></div>
+      <button id="btn-create-room" class="btn primary big">ルームを作成</button>
+      <p class="terms">作成したあいことばを相手に伝えてください。</p>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><span class="panel-title">あいことばで参加</span></div>
+      <div class="room-row">
+        <input id="room-code-input" placeholder="123456" maxlength="6" inputmode="numeric">
+        <button id="btn-join-room" class="btn primary">参加</button>
+      </div>
+    </div>
+    <p id="room-error" class="error"></p>
+  </div>
+</section>
+
+<!-- デッキ編成 -->
+<section id="screen-deck" class="screen hidden">
+  <header class="appbar"><button class="btn back" data-nav="home">← ホーム</button><h2>デッキ編成</h2></header>
+  <div class="deck-editor">
+    <div class="card">
+      <div class="deck-head">
+        <label>使用中のデッキ<select id="deck-select"></select></label>
+        <label>デッキ名<input id="deck-name" maxlength="12" placeholder="デッキ名"></label>
+        <span id="deck-cost" class="avg-cost"></span>
+      </div>
+      <div id="deck-slots" class="deck-slots"></div>
+      <div class="deck-actions">
+        <button id="btn-deck-save" class="btn primary">保存</button>
+        <button id="btn-deck-use" class="btn">このデッキを使う</button>
+        <button id="btn-deck-new" class="btn">新規デッキ</button>
+      </div>
+      <p id="deck-error" class="error"></p>
+    </div>
+    <div class="card">
+      <div class="panel-head"><span class="panel-title">所有ペット(タップで出し入れ)</span></div>
+      <div id="deck-owned" class="pet-grid"></div>
+    </div>
+  </div>
+</section>
+
+<!-- 図鑑 -->
+<section id="screen-dex" class="screen hidden">
+  <header class="appbar"><button class="btn back" data-nav="home">← ホーム</button><h2>📖 図鑑</h2></header>
+  <div class="dex-tabs">
+    <button class="tab active" data-dextab="pets">ペット</button>
+    <button class="tab" data-dextab="facilities">建物</button>
+    <button class="tab" data-dextab="upgrades">強化</button>
+  </div>
+  <div id="dex-grid" class="pet-grid dex"></div>
+  <div id="dex-facilities" class="dex-panels hidden"></div>
+  <div id="dex-upgrades" class="dex-panels hidden"></div>
+  <div id="dex-detail" class="modal hidden"><div class="card modal-card" id="dex-detail-body"></div></div>
+</section>
+
+<!-- ランキング -->
+<section id="screen-ranking" class="screen hidden">
+  <header class="appbar"><button class="btn back" data-nav="home">← ホーム</button><h2>🏆 ランキング</h2></header>
+  <div id="ranking-list" class="history-list"></div>
+</section>
+
+<!-- 履歴 -->
+<section id="screen-history" class="screen hidden">
+  <header class="appbar"><button class="btn back" data-nav="home">← ホーム</button><h2>対戦履歴</h2></header>
+  <div id="history-list" class="history-list"></div>
+</section>
+
+<!-- 設定 -->
+<section id="screen-settings" class="screen hidden">
+  <header class="appbar"><button class="btn back" data-nav="home">← ホーム</button><h2>設定</h2></header>
+  <div class="card settings">
+    <div id="settings-info"></div>
+    <button id="btn-logout" class="btn">ログアウト</button>
+    <p class="terms"><a href="#" onclick="alert('プライバシーポリシー(初期版プレースホルダー)');return false">プライバシーポリシー</a></p>
+  </div>
+</section>
+
+<!-- マッチング -->
+<section id="screen-matching" class="screen hidden">
+  <div class="matching-box card">
+    <img src="/assets/pets/mame-shiba/walk_1.png" class="matching-dog" alt="">
+    <h2 id="matching-status">対戦相手を探しています…</h2>
+    <p id="matching-code" class="room-code"></p>
+    <button id="btn-cancel-match" class="btn">キャンセル</button>
+  </div>
+</section>
+
+<!-- 対戦 -->
+<section id="screen-battle" class="screen hidden">
+  <div class="battle-top">
+    <div id="b-opp" class="b-player"></div>
+    <div class="b-center"><span id="b-timer">3:00</span><span id="b-phase" class="b-phase"></span></div>
+    <div id="b-me" class="b-player"></div>
+  </div>
+  <div class="battle-wrap">
+    <canvas id="battle-canvas"></canvas>
+    <div id="b-lane-hint" class="lane-hint hidden"><div data-lane="top">上レーンへ出撃</div><div data-lane="bottom">下レーンへ出撃</div></div>
+    <div id="b-conn" class="conn-banner hidden"></div>
+    <div id="map-banner" class="conn-banner hidden" style="border-color:var(--accent)">全体マップ(操作はできません)</div>
+    <button id="btn-map" class="btn small map-btn">マップ</button>
+  </div>
+  <div class="battle-bottom">
+    <div class="bone-row"><img src="/assets/ui/icon-bone.png" class="bone-icon" alt="ほね"><div id="bone-gauge" class="bone-gauge"></div><span id="bone-num"></span></div>
+    <div id="upgrade-row" class="upgrade-row"></div>
+    <div id="hand" class="hand"></div>
+    <div class="battle-side"><div id="next-pet" class="next-pet"></div><button id="btn-surrender" class="btn small">降参</button></div>
+  </div>
+  <div id="result-overlay" class="modal hidden"><div class="card modal-card" id="result-body"></div></div>
+</section>
+
+<script src="/sdk/iz-sdk.js"></script>
+<script src="js/net.js"></script>
+<script src="js/battle.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
