@@ -8,6 +8,7 @@ substitutions:
   _REPO: wanwan
   _BUCKET: '' # gs://<bucket>/wanwan (空なら永続化なし)
   _SERVICE_ACCOUNT: '' # Cloud Run 実行SA(空ならデフォルト)
+  _ADMIN_NAMES: '' # 管理者にする表示名(カンマ区切り)。公開URLでは必ず指定する
 
 steps:
   - id: build
@@ -41,6 +42,9 @@ steps:
           --port=8080 --set-env-vars=NODE_ENV=production,WANWAN_DB=/data/wanwan.db"
         if [ -n "${_BUCKET}" ]; then
           FLAGS="$FLAGS --set-env-vars=LITESTREAM_REPLICA_URL=${_BUCKET}"
+        fi
+        if [ -n "${_ADMIN_NAMES}" ]; then
+          FLAGS="$FLAGS --set-env-vars=^@^WANWAN_ADMIN_NAMES=${_ADMIN_NAMES}"
         fi
         if [ -n "${_SERVICE_ACCOUNT}" ]; then
           FLAGS="$FLAGS --service-account=${_SERVICE_ACCOUNT}"

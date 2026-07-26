@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # わんわん大戦争サーバーを Cloud Run へデプロイする(初回はAPI有効化・バケット・SA作成も行う)。
 #
-#   ./games/wanwan/deploy/deploy.sh              # 既定: iz-app-6e1d5 / asia-northeast1
-#   PROJECT=xxx REGION=asia-northeast1 ./games/wanwan/deploy/deploy.sh
+#   WANWAN_ADMIN_NAMES=<あなたの表示名> ./games/wanwan/deploy/deploy.sh
+#   PROJECT=xxx REGION=asia-northeast1 WANWAN_ADMIN_NAMES=... ./games/wanwan/deploy/deploy.sh
+#
+# WANWAN_ADMIN_NAMES を指定すると、その表示名で登録したときだけ管理者になる。
+# 公開URLでは必ず指定すること(未指定だと最初に登録した第三者が管理者になる)。
 #
 # 事前に `gcloud auth login`(組織のセッション制御で定期的に失効する)が必要。
 set -euo pipefail
@@ -40,7 +43,7 @@ gcloud storage buckets add-iam-policy-binding "gs://${BUCKET_NAME}" \
 echo "▶ ビルド + デプロイ"
 cd "$ROOT"
 gcloud builds submit --config games/wanwan/deploy/cloudbuild.yaml --project "$PROJECT" \
-  --substitutions="_REGION=${REGION},_SERVICE=${SERVICE},_REPO=${REPO},_BUCKET=gs://${BUCKET_NAME}/wanwan,_SERVICE_ACCOUNT=${RUN_SA}"
+  --substitutions="^@^_REGION=${REGION}@_SERVICE=${SERVICE}@_REPO=${REPO}@_BUCKET=gs://${BUCKET_NAME}/wanwan@_SERVICE_ACCOUNT=${RUN_SA}@_ADMIN_NAMES=${WANWAN_ADMIN_NAMES:-}"
 
 URL="$(gcloud run services describe "$SERVICE" --region "$REGION" --project "$PROJECT" --format='value(status.url)')"
 echo "▶ デプロイ完了: $URL"
