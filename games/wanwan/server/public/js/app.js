@@ -32,6 +32,12 @@
 
   // ─── 認証 ───────────────────────────────────────────────────
   let authMode = 'login';
+  // ?admin=1 で開いたときだけ管理者トークン欄を出す(初期管理者の作成用)
+  const adminBootstrap = new URLSearchParams(location.search).has('admin');
+  if (adminBootstrap) {
+    $('auth-admin-row').classList.remove('hidden');
+    setAuthMode('register');
+  }
   $('tab-login').onclick = () => setAuthMode('login');
   $('tab-register').onclick = () => setAuthMode('register');
   function setAuthMode(m) {
@@ -39,11 +45,14 @@
     $('tab-login').classList.toggle('active', m === 'login');
     $('tab-register').classList.toggle('active', m === 'register');
     $('auth-submit').textContent = m === 'login' ? 'ログイン' : 'アカウント作成';
+    $('auth-admin-row').classList.toggle('hidden', !(adminBootstrap && m === 'register'));
   }
   $('auth-submit').onclick = async () => {
     $('auth-error').textContent = '';
     try {
       const body = { name: $('auth-name').value.trim(), password: $('auth-pass').value };
+      const adminToken = $('auth-admin-token').value.trim();
+      if (authMode === 'register' && adminToken) body.adminToken = adminToken;
       const res = await Net.api(authMode === 'login' ? '/login' : '/register', { body });
       Net.setToken(res.token);
       me = res.user;
@@ -441,34 +450,56 @@
   }
 
   // ─── ガチャ ─────────────────────────────────────────────────
+  // ソシャゲのガチャ画面の定石に沿う: ガチャ機 → カプセル → 1枚ずつ開封(タップでスキップ)
+  // → まとめて結果表示。CTAは親指ゾーンに置き、提供割合とラインナップはモーダルへ逃がす。
   let gachaInfo = null;
+  let revealTimers = [];
+  let revealSkip = null;
 
   async function loadGacha() {
     gachaInfo = await Net.api('/gacha');
     $('gacha-error').textContent = '';
     $('gacha-coins').innerHTML = `${COIN}${gachaInfo.coins}`;
-    $('btn-gacha-1').innerHTML = `1回ひく <small>${COIN}${gachaInfo.singleCost}</small>`;
-    $('btn-gacha-10').innerHTML = `${gachaInfo.multiCount}回ひく <small>${COIN}${gachaInfo.multiCost}</small>`;
-    $('btn-gacha-1').disabled = gachaInfo.coins < gachaInfo.singleCost;
-    $('btn-gacha-10').disabled = gachaInfo.coins < gachaInfo.multiCost;
-
-    $('gacha-rates').innerHTML = gachaInfo.rarities.map(r => `
-      <tr><td>${rarityBadge(r.id)} ${esc(r.name)}<small style="opacity:.6"> ・ ${r.pets.length}種</small></td>
-      <td>${r.rate}%<small style="opacity:.6"> ・ 重複時 ${COIN}${r.duplicateCoins}</small></td></tr>`).join('');
-    $('gacha-guarantee').textContent = gachaInfo.multiGuaranteeRarity
-      ? `${gachaInfo.multiCount}回ひくと ${gachaInfo.multiGuaranteeRarity} 以上が1回以上でます。所持済みのわんこが出たときはコインが戻ります。`
-      : '所持済みのわんこが出たときはコインが戻ります。';
-
-    $('gacha-pool').innerHTML = gachaInfo.rarities.map(r => `
-      <h4 class="pool-head">${rarityBadge(r.id)} ${esc(r.name)}</h4>
-      <div class="pet-grid">${r.pets.map(p => `
-        <div class="pet-cell${p.owned ? '' : ' locked'}">
-          <span class="pcost">${p.cost}</span>
-          <img src="/assets/pets/${p.id}/icon.png" alt="">
-          <span class="pname">${esc(p.name)}</span>
-          ${p.owned ? '<span class="locktag">所持</span>' : ''}
-        </div>`).join('')}</div>`).join('');
+    const b1 = $('btn-gacha-1');
+    const b10 = $('btn-gacha-10');
+    b1.querySelector('small').innerHTML = `${COIN}${gachaInfo.singleCost}`;
+    b10.querySelector('b').textContent = `${gachaInfo.multiCount}回`;
+    b10.querySelector('small').innerHTML = `${COIN}${gachaInfo.multiCost}`;
+    const tag = b10.querySelector('.pull-tag');
+    if (gachaInfo.multiGuaranteeRarity) tag.textContent = `${gachaInfo.multiGuaranteeRarity}以上確定`;
+    else tag.classList.add('hidden');
+    b1.disabled = gachaInfo.coins < gachaInfo.singleCost;
+    b10.disabled = gachaInfo.coins < gachaInfo.multiCost;
+    if (b1.disabled && b10.disabled) $('gacha-error').textContent = 'コインが足りません。対戦で集めよう。';
   }
+
+  /** 提供割合 / ラインナップ(モーダル) */
+  function showGachaInfo(kind) {
+    if (!gachaInfo) return;
+    const title = kind === 'rates' ? '提供割合' : 'ラインナップ';
+    const body = kind === 'rates'
+      ? gachaInfo.rarities.map(r => `
+          <div class="rate-row">${rarityBadge(r.id)} <span>${esc(r.name)}<br><small>${r.pets.length}種 ・ 重複時 ${COIN}${r.duplicateCoins}</small></span>
+          <span class="rate-val">${r.rate}%</span></div>`).join('')
+        + `<p class="terms">${gachaInfo.multiGuaranteeRarity
+          ? `${gachaInfo.multiCount}回ひくと ${gachaInfo.multiGuaranteeRarity} 以上が1回以上でます。` : ''}
+           すでに なかまの わんこが出たときはコインが戻ります。</p>`
+      : gachaInfo.rarities.map(r => `
+          <h4 class="pool-head">${rarityBadge(r.id)} ${esc(r.name)}</h4>
+          <div class="pet-grid">${r.pets.map(p => `
+            <div class="pet-cell${p.owned ? '' : ' locked'}">
+              <span class="pcost">${p.cost}</span>
+              <img src="/assets/pets/${p.id}/icon.png" alt="">
+              <span class="pname">${esc(p.name)}</span>
+              ${p.owned ? '<span class="locktag">所持</span>' : ''}
+            </div>`).join('')}</div>`).join('');
+    $('gacha-info-title').textContent = title;
+    $('gacha-info-body').innerHTML = body;
+    $('gacha-info').classList.remove('hidden');
+  }
+  $('btn-gacha-rates').onclick = () => showGachaInfo('rates');
+  $('btn-gacha-pool').onclick = () => showGachaInfo('pool');
+  $('btn-gacha-info-close').onclick = () => $('gacha-info').classList.add('hidden');
 
   $('btn-gacha-1').onclick = () => drawGacha(1);
   $('btn-gacha-10').onclick = () => drawGacha(gachaInfo?.multiCount || 10);
@@ -476,34 +507,98 @@
   async function drawGacha(count) {
     $('gacha-error').textContent = '';
     $('btn-gacha-1').disabled = $('btn-gacha-10').disabled = true;
+    // 先にガチャ機を回す(通信待ちを演出で隠す)
+    const machine = $('gacha-machine');
+    machine.classList.add('shake');
+    const shaken = new Promise(r => setTimeout(r, 900));
     try {
-      const res = await Net.api('/gacha/draw', { body: { count } });
+      const [res] = await Promise.all([Net.api('/gacha/draw', { body: { count } }), shaken]);
       me = res.user;
-      showGachaResult(res);
+      machine.classList.remove('shake');
+      dropCapsule();
+      setTimeout(() => playReveal(res), 420);
       await loadGacha();
     } catch (e) {
+      machine.classList.remove('shake');
       $('gacha-error').textContent = e.message;
       await loadGacha();
     }
   }
 
-  function showGachaResult(res) {
+  function dropCapsule() {
+    const cap = $('gacha-capsule');
+    cap.classList.remove('hidden', 'drop');
+    void cap.offsetWidth; // アニメーションを再生し直す
+    cap.classList.add('drop');
+    setTimeout(() => cap.classList.add('hidden'), 900);
+  }
+
+  /** 1枚ずつ開封 → まとめて結果。画面タップでいつでもスキップできる */
+  function playReveal(res) {
+    const overlay = $('gacha-result');
+    const burst = $('gacha-burst');
+    const reveal = $('gacha-reveal');
+    const rank = r => gachaInfo.rarities.findIndex(x => x.id === r);
+    const best = res.results.reduce((a, b) => (rank(b.rarity) > rank(a.rarity) ? b : a), res.results[0]);
+
+    overlay.classList.remove('hidden');
+    $('gacha-summary').classList.add('hidden');
+    reveal.className = 'reveal';
+    $('gacha-tap-hint').classList.remove('hidden');
+    burst.className = `burst on${rank(best.rarity) >= gachaInfo.rarities.length - 1 ? ' sr' : ''}`;
+    reveal.innerHTML = '';
+
+    let i = 0;
+    const showOne = () => {
+      const r = res.results[i];
+      reveal.className = `reveal r-${r.rarity}`; // 後光の色をレアリティに合わせる
+      reveal.innerHTML = `
+        <div class="reveal-card r-${esc(r.rarity)}">
+          ${res.results.length > 1 ? `<span class="reveal-count">${i + 1} / ${res.results.length}</span>` : ''}
+          <span class="rarity r-${esc(r.rarity)}">${esc(r.rarity)}</span>
+          <img src="/assets/pets/${r.petId}/idle.png" alt="">
+          <span class="rname">${esc(r.name)}</span>
+          <span class="rtag ${r.duplicate ? 'dup' : 'new'}">${r.duplicate ? `おなじわんこ → ${COIN}${r.coins}` : 'NEW!'}</span>
+        </div>`;
+      i++;
+      if (i < res.results.length) revealTimers.push(setTimeout(showOne, 620));
+      else revealTimers.push(setTimeout(() => showSummary(res), 900));
+    };
+    showOne();
+
+    revealSkip = () => showSummary(res);
+    overlay.onclick = () => { if (!$('gacha-summary').classList.contains('hidden')) return; revealSkip(); };
+  }
+
+  function clearReveal() {
+    revealTimers.forEach(clearTimeout);
+    revealTimers = [];
+  }
+
+  function showSummary(res) {
+    clearReveal();
     const newCount = res.results.filter(r => !r.duplicate).length;
-    const cards = res.results.map((r, i) => `
-      <div class="gacha-card r-${esc(r.rarity)}${r.duplicate ? ' dup' : ''}" style="animation-delay:${i * 90}ms">
+    $('gacha-reveal').innerHTML = '';
+    $('gacha-reveal').className = 'reveal hidden'; // 空の開封エリアが場所を取らないように畳む
+    $('gacha-tap-hint').classList.add('hidden');
+    $('summary-cards').innerHTML = res.results.map((r, i) => `
+      <div class="gacha-card r-${esc(r.rarity)}${r.duplicate ? ' dup' : ''}" style="animation-delay:${i * 60}ms">
         <span class="rarity r-${esc(r.rarity)}">${esc(r.rarity)}</span>
         <img src="/assets/pets/${r.petId}/icon.png" alt="">
         <span class="gname">${esc(r.name)}</span>
-        <span class="gtag">${r.duplicate ? `重複 +${COIN}${r.coins}` : 'NEW!'}</span>
+        <span class="gtag">${r.duplicate ? `+${COIN}${r.coins}` : 'NEW!'}</span>
       </div>`).join('');
-    $('gacha-result-body').innerHTML = `
-      <h3 style="text-align:center">${newCount > 0 ? `${newCount}体が なかまになった!` : 'コインが もどってきた'}</h3>
-      <div class="gacha-cards">${cards}</div>
-      <p class="terms" style="text-align:center">つかったコイン ${COIN}${res.spent}${res.refunded ? ` ・ もどったコイン ${COIN}${res.refunded}` : ''}</p>
-      <button class="btn primary" id="btn-gacha-close" style="margin-top:12px;width:100%">とじる</button>`;
-    $('gacha-result').classList.remove('hidden');
-    $('btn-gacha-close').onclick = () => $('gacha-result').classList.add('hidden');
+    $('summary-line').innerHTML = `${newCount > 0 ? `<b>${newCount}体が なかまになった!</b><br>` : ''}`
+      + `つかったコイン ${COIN}${res.spent}${res.refunded ? ` ・ もどったコイン ${COIN}${res.refunded}` : ''}`;
+    $('gacha-summary').classList.remove('hidden');
   }
+
+  $('btn-gacha-close').onclick = e => {
+    e.stopPropagation();
+    clearReveal();
+    $('gacha-burst').className = 'burst';
+    $('gacha-result').classList.add('hidden');
+  };
 
   // ─── ランキング ─────────────────────────────────────────────
   async function loadRanking() {
