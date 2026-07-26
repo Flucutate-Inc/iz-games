@@ -3,7 +3,7 @@ tools/node_modules/
 server/node_modules/
 
 # ローカルDB(SQLite)
-server/wanwan.db*
+server/*.db*
 server/test/test.db*
 
 # 生成パイプラインの中間キャッシュ(基準ポーズの白背景 raw)

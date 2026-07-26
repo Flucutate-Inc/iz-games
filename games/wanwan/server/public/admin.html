@@ -7,29 +7,62 @@
 <link rel="stylesheet" href="style.css">
 <style>
   /* 管理画面は情報密度優先。トークンは共通デザインシステムを使う */
-  body { padding: var(--s4); image-rendering: auto; background: var(--bg); }
-  .admin-wrap { max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: var(--s4); }
+  body { padding: var(--s3); image-rendering: auto; background: var(--bg); }
+  .admin-wrap { max-width: 1200px; margin: 0 auto; display: flex; flex-direction: column; gap: var(--s3); }
   .admin-wrap > .row:first-child { align-items: center; }
   table.admin { width: 100%; border-collapse: collapse; font-size: var(--t-cap); }
-  table.admin th, table.admin td { border: 1px solid var(--line); padding: var(--s2); text-align: left; }
-  table.admin th { background: rgba(0,0,0,0.3); position: sticky; top: 0; color: var(--text-2); }
-  table.admin input { width: 76px; min-height: 32px; padding: 0 var(--s2); font-size: var(--t-cap); }
+  table.admin th, table.admin td { border: 1px solid var(--line); padding: var(--s2); text-align: left; white-space: nowrap; }
+  table.admin th { background: rgba(0,0,0,0.3); position: sticky; top: 0; color: var(--text-2); z-index: 1; }
+  table.admin tr.sel td { background: rgba(255,176,32,0.12); }
+  table.admin input, table.admin select { width: 84px; min-height: 32px; padding: 0 var(--s2); font-size: var(--t-cap); }
+  table.admin td.clickable { cursor: pointer; }
   .badge { padding: 2px 10px; border-radius: var(--r-full); font-size: 11px; font-weight: 700; }
   .badge.published { background: var(--green); color: #06290f; }
   .badge.draft { background: var(--accent); color: var(--accent-ink); }
   .badge.testing { background: var(--blue); color: #04213d; }
+  .badge.scheduled { background: #b06bff; color: #1c0733; }
   .badge.archived, .badge.rolled_back { background: var(--surface-2); color: var(--text-2); }
   .row { display: flex; gap: var(--s2); align-items: center; flex-wrap: wrap; }
-  .row > input { width: auto; flex: 1 1 180px; }
-  .scroll { max-height: 480px; overflow: auto; border-radius: var(--r-sm); }
+  .row > input { width: auto; flex: 1 1 160px; }
+  .scroll { max-height: 420px; overflow: auto; border-radius: var(--r-sm); }
+  .scroll.tall { max-height: 620px; }
   h1 { font-size: var(--t-title); }
   h2 { font-size: var(--t-body); margin-bottom: var(--s2); }
-  h3 { font-size: var(--t-cap); color: var(--text-2); }
-  .ok { color: var(--green); } .warn { color: var(--accent); }
-  .diff-list { font-size: var(--t-cap); max-height: 220px; overflow: auto; background: rgba(0,0,0,0.3); padding: var(--s3); border-radius: var(--r-sm); }
-  #rules-fields { gap: var(--s3); }
-  #rules-fields label { flex: 0 0 auto; }
-  #rules-fields input { width: 110px; }
+  h3 { font-size: var(--t-cap); color: var(--text-2); margin: var(--s3) 0 var(--s2); }
+  .ok { color: var(--green); } .warn { color: var(--accent); } .muted { color: var(--text-3); }
+  .diff-list { font-size: var(--t-cap); max-height: 260px; overflow: auto; background: rgba(0,0,0,0.3); padding: var(--s3); border-radius: var(--r-sm); }
+  .fields { display: flex; flex-wrap: wrap; gap: var(--s3); }
+  .fields label { flex: 0 0 auto; font-size: 11px; }
+  .fields input, .fields select { width: 120px; }
+  .fields input.wide { width: 260px; }
+  /* タブ */
+  .admin-tabs { display: flex; gap: var(--s2); flex-wrap: wrap; }
+  .admin-tabs .tab { flex: 0 0 auto; padding: 0 var(--s4); min-height: 40px; }
+  .pane { display: none; flex-direction: column; gap: var(--s3); }
+  .pane.active { display: flex; }
+  /* KPI */
+  .kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--s2); }
+  .kpi { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); padding: var(--s3); }
+  .kpi b { display: block; font-size: var(--t-title); font-variant-numeric: tabular-nums; }
+  .kpi span { font-size: 11px; color: var(--text-3); }
+  /* 簡易バー */
+  .bars { display: flex; flex-direction: column; gap: 3px; font-size: 11px; }
+  .bars .bar { display: grid; grid-template-columns: 110px 1fr 64px; align-items: center; gap: var(--s2); }
+  .bars .bar i { display: block; height: 12px; background: linear-gradient(90deg, var(--accent), var(--accent-2)); border-radius: 3px; }
+  .bars .bar span:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+  .unsaved { color: var(--accent); font-weight: 700; }
+  .pet-editor { display: grid; grid-template-columns: 240px 1fr; gap: var(--s3); }
+  .pet-list { max-height: 560px; overflow: auto; display: flex; flex-direction: column; gap: 2px; }
+  .pet-list button { justify-content: flex-start; min-height: 36px; font-size: var(--t-cap); }
+  .pet-list button.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+  .ability-card { border: 1px solid var(--line); border-radius: var(--r-sm); padding: var(--s3); margin-bottom: var(--s2); background: rgba(0,0,0,0.2); }
+  .timeline { font-size: var(--t-cap); max-height: 420px; overflow: auto; font-variant-numeric: tabular-nums; }
+  .timeline div { border-bottom: 1px solid var(--line); padding: 2px 0; }
+  @media (max-width: 860px) {
+    .pet-editor { grid-template-columns: 1fr; }
+    .pet-list { max-height: 200px; flex-direction: row; overflow-x: auto; }
+    .pet-list button { flex: 0 0 auto; }
+  }
 </style>
 </head>
 <body>
@@ -48,57 +81,162 @@
       <button id="a-login" class="btn primary">ログイン</button>
       <span id="a-error" class="error"></span>
     </div>
-    <p class="terms">最初に登録されたアカウントが管理者になります。</p>
+    <p class="terms">最初に登録されたアカウントが管理者になります。以後は管理画面の「アカウント」タブから権限を付与できます。</p>
   </div>
 
-  <div id="admin-main" class="hidden" style="display:flex;flex-direction:column;gap:var(--s4)">
+  <div id="admin-main" class="hidden" style="display:flex;flex-direction:column;gap:var(--s3)">
+    <div class="admin-tabs">
+      <button class="tab active" data-tab="balance">バランス</button>
+      <button class="tab" data-tab="users">アカウント</button>
+      <button class="tab" data-tab="matches">試合</button>
+      <button class="tab" data-tab="stats">分析</button>
+      <button class="tab" data-tab="live">稼働</button>
+      <button class="tab" data-tab="audit">監査</button>
+    </div>
 
-    <div class="card">
-      <h2>バランスバージョン</h2>
-      <div class="row" style="margin-bottom:var(--s2)">
-        <button id="btn-new-draft" class="btn">現行版から下書き作成</button>
-        <input id="draft-label" placeholder="ラベル(例: v1.1調整)">
-        <input id="draft-reason" placeholder="変更理由(監査ログ)">
+    <!-- ── バランス ── -->
+    <div class="pane active" id="pane-balance">
+      <div class="card">
+        <h2>バランスバージョン</h2>
+        <div class="row" style="margin-bottom:var(--s2)">
+          <button id="btn-new-draft" class="btn">現行版から下書き作成</button>
+          <input id="draft-label" placeholder="ラベル(例: v1.1調整)">
+          <input id="draft-reason" placeholder="変更理由(監査ログに残ります)">
+          <button id="btn-import" class="btn small">JSONを取り込む</button>
+          <input id="import-file" type="file" accept="application/json" class="hidden">
+        </div>
+        <div class="scroll"><table class="admin" id="version-table"></table></div>
       </div>
-      <div class="scroll"><table class="admin" id="version-table"></table></div>
-    </div>
 
-    <div class="card hidden" id="editor-card">
-      <h2>版の編集: <span id="edit-vid"></span></h2>
-      <div class="row" style="margin-bottom:var(--s2)">
-        <button id="btn-save-draft" class="btn primary">保存(バリデーション)</button>
-        <button id="btn-validate" class="btn">検証のみ</button>
-        <button id="btn-diff" class="btn">現行版との差分</button>
-        <button id="btn-testing" class="btn">テスト反映</button>
-        <button id="btn-publish" class="btn">本番公開</button>
-        <span id="edit-msg"></span>
+      <div class="card hidden" id="editor-card">
+        <h2>版の編集: <span id="edit-vid"></span> <span id="edit-dirty" class="unsaved"></span></h2>
+        <div class="row" style="margin-bottom:var(--s2)">
+          <button id="btn-save-draft" class="btn primary">保存</button>
+          <button id="btn-validate" class="btn">検証のみ</button>
+          <label style="flex-direction:row;align-items:center;gap:var(--s1)">比較先
+            <select id="diff-target" style="width:auto"></select>
+          </label>
+          <button id="btn-diff" class="btn">差分</button>
+          <button id="btn-testing" class="btn">テスト反映</button>
+          <input id="schedule-at" type="datetime-local" style="width:auto">
+          <button id="btn-schedule" class="btn">公開予約</button>
+          <button id="btn-publish" class="btn">本番公開</button>
+          <span id="edit-msg"></span>
+        </div>
+        <div id="diff-box" class="diff-list hidden"></div>
+
+        <h3>試合ルール</h3><div class="fields" id="f-rules"></div>
+        <h3>施設</h3><div class="fields" id="f-facilities"></div>
+        <h3>進行(初期配布・報酬・レベル)</h3><div class="fields" id="f-progression"></div>
+        <h3>マッチング</h3><div class="fields" id="f-matchmaking"></div>
+        <h3>ガチャ</h3><div class="fields" id="f-gacha"></div>
+        <h3>試合内強化</h3><div class="fields" id="f-upgrades"></div>
+
+        <h3>ペット</h3>
+        <div class="row" style="margin-bottom:var(--s2)">
+          <button id="btn-pet-add" class="btn small">新規ペット</button>
+          <button id="btn-pet-dup" class="btn small">選択中を複製</button>
+          <button id="btn-pet-del" class="btn small">選択中を削除</button>
+          <span class="terms">素材は <code>assets/pets/&lt;id&gt;/</code> に必要です</span>
+        </div>
+        <div class="pet-editor">
+          <div class="pet-list" id="pet-list"></div>
+          <div id="pet-detail"></div>
+        </div>
       </div>
-      <div id="diff-box" class="diff-list hidden"></div>
-      <h3 style="margin:var(--s3) 0 var(--s2)">試合ルール・施設</h3>
-      <div class="row" id="rules-fields"></div>
-      <h3 style="margin:var(--s3) 0 var(--s2)">ペット(主要値)</h3>
-      <div class="scroll"><table class="admin" id="pet-table"></table></div>
     </div>
 
-    <div class="card">
-      <h2>アカウント運用</h2>
-      <div class="row" style="margin-bottom:var(--s2)">
-        <input id="user-q" placeholder="名前で検索">
-        <button id="btn-user-search" class="btn">検索</button>
+    <!-- ── アカウント ── -->
+    <div class="pane" id="pane-users">
+      <div class="card">
+        <h2>アカウント</h2>
+        <div class="row" style="margin-bottom:var(--s2)">
+          <input id="user-q" placeholder="名前 / ID / firebase_uid">
+          <select id="user-status" style="width:auto"><option value="">全状態</option><option value="active">active</option><option value="suspended">suspended</option></select>
+          <select id="user-sort" style="width:auto">
+            <option value="id">新しい順</option><option value="rating">レート順</option>
+            <option value="coins">コイン順</option><option value="matches">試合数順</option><option value="login">最終ログイン順</option>
+          </select>
+          <label style="flex-direction:row;align-items:center;gap:var(--s1);font-size:11px"><input type="checkbox" id="user-admin-only" style="width:auto;min-height:auto"> 管理者のみ</label>
+          <button id="btn-user-search" class="btn">検索</button>
+          <span id="user-total" class="muted"></span>
+        </div>
+        <div class="scroll"><table class="admin" id="user-table"></table></div>
       </div>
-      <div class="scroll"><table class="admin" id="user-table"></table></div>
+      <div class="card hidden" id="user-detail-card"><div id="user-detail"></div></div>
     </div>
 
-    <div class="card">
-      <h2>分析(ペット採用率・勝率)</h2>
-      <button id="btn-stats" class="btn" style="margin-bottom:var(--s2)">更新</button>
-      <div class="scroll"><table class="admin" id="stats-table"></table></div>
+    <!-- ── 試合 ── -->
+    <div class="pane" id="pane-matches">
+      <div class="card">
+        <h2>試合調査</h2>
+        <div class="row" style="margin-bottom:var(--s2)">
+          <input id="m-from" type="date" style="width:auto"><span class="muted">〜</span><input id="m-to" type="date" style="width:auto">
+          <select id="m-version" style="width:auto"></select>
+          <select id="m-result" style="width:auto"><option value="">全結果</option><option value="p1">P1勝ち</option><option value="p2">P2勝ち</option><option value="draw">引き分け</option><option value="invalid">無効</option></select>
+          <input id="m-user" placeholder="ユーザーID" style="flex:0 0 120px">
+          <button id="btn-match-search" class="btn">検索</button>
+        </div>
+        <div class="scroll"><table class="admin" id="match-table"></table></div>
+      </div>
+      <div class="card hidden" id="match-detail-card"><div id="match-detail"></div></div>
     </div>
 
-    <div class="card">
-      <h2>監査ログ</h2>
-      <button id="btn-audit" class="btn" style="margin-bottom:var(--s2)">更新</button>
-      <div class="scroll"><table class="admin" id="audit-table"></table></div>
+    <!-- ── 分析 ── -->
+    <div class="pane" id="pane-stats">
+      <div class="card">
+        <div class="row">
+          <h2 style="margin:0">分析</h2>
+          <input id="s-from" type="date" style="width:auto"><span class="muted">〜</span><input id="s-to" type="date" style="width:auto">
+          <select id="s-version" style="width:auto"></select>
+          <button id="btn-stats" class="btn">更新</button>
+        </div>
+      </div>
+      <div class="card"><h2>KPI</h2><div class="kpis" id="kpi-box"></div>
+        <h3>試合数の推移</h3><div class="bars" id="bars-matches"></div>
+        <h3>決着理由</h3><div class="bars" id="bars-reasons"></div>
+        <h3>レート分布</h3><div class="bars" id="bars-ratings"></div>
+      </div>
+      <div class="card"><h2>ペット(採用率・勝率)</h2><div class="scroll"><table class="admin" id="stats-table"></table></div></div>
+      <div class="card"><h2>ガチャ</h2><div class="kpis" id="gacha-kpis"></div>
+        <h3>レアリティ別(実績 vs 理論)</h3><div class="scroll"><table class="admin" id="gacha-rarity-table"></table></div>
+        <h3>ペット別</h3><div class="scroll"><table class="admin" id="gacha-pet-table"></table></div>
+      </div>
+      <div class="card"><h2>IZ課金</h2><div class="kpis" id="rev-kpis"></div>
+        <h3>日別</h3><div class="bars" id="bars-revenue"></div>
+        <h3>ユーザー別</h3><div class="scroll"><table class="admin" id="rev-table"></table></div>
+      </div>
+    </div>
+
+    <!-- ── 稼働 ── -->
+    <div class="pane" id="pane-live">
+      <div class="card">
+        <div class="row"><h2 style="margin:0">稼働状況</h2>
+          <label style="flex-direction:row;align-items:center;gap:var(--s1);font-size:11px"><input type="checkbox" id="live-auto" checked style="width:auto;min-height:auto"> 5秒ごとに更新</label>
+          <button id="btn-live" class="btn small">今すぐ更新</button>
+          <span id="live-at" class="muted"></span>
+        </div>
+        <div class="kpis" id="live-kpis" style="margin-top:var(--s2)"></div>
+      </div>
+      <div class="card"><h2>進行中の試合</h2><div class="scroll"><table class="admin" id="live-rooms"></table></div></div>
+      <div class="card"><h2>マッチング待機</h2><div class="scroll"><table class="admin" id="live-queue"></table></div></div>
+    </div>
+
+    <!-- ── 監査 ── -->
+    <div class="pane" id="pane-audit">
+      <div class="card">
+        <h2>監査ログ</h2>
+        <div class="row" style="margin-bottom:var(--s2)">
+          <select id="au-action" style="width:auto"><option value="">全操作</option></select>
+          <input id="au-from" type="date" style="width:auto"><span class="muted">〜</span><input id="au-to" type="date" style="width:auto">
+          <input id="au-q" placeholder="対象・理由・内容で検索">
+          <button id="btn-audit" class="btn">検索</button>
+          <button id="btn-audit-csv" class="btn small">CSV</button>
+          <span id="au-total" class="muted"></span>
+        </div>
+        <div class="scroll tall"><table class="admin" id="audit-table"></table></div>
+        <button id="btn-audit-more" class="btn small" style="margin-top:var(--s2)">さらに読み込む</button>
+      </div>
     </div>
   </div>
 </div>

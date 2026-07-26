@@ -338,7 +338,11 @@ function makeUnit(state, owner, pet, lane, x) {
     attackCd: 0,
     stunRemain: spawnStun,
     stunImmuneRemain: 0,
-    buffs: [], // {kind:'dmgcut'|'atkdown'|'atkspeed', amount, remain}
+    // {kind:'dmgcut'|'atkdown'|'atkspeed', amount, remain}
+    // 出撃時トリガーの被ダメージ軽減(ブルドッグ等)はここで付与する
+    buffs: (pet.abilities || [])
+      .filter(a => a.type === 'damageReduction' && (a.trigger || 'onSpawn') === 'onSpawn')
+      .map(a => ({ kind: 'dmgcut', amount: a.amount, remain: a.duration })),
     kbThresholds: Array.from({ length: kbCount }, (_, i) => hp * (kbCount - i) / (kbCount + 1)),
     firstAttackDone: false,
     flying: pet.movement === 'flying',

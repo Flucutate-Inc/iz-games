@@ -93,6 +93,18 @@ CREATE TABLE IF NOT EXISTS iz_purchases (
   coins INTEGER NOT NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS gacha_pulls (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  balance_version_id INTEGER NOT NULL,
+  pet_id TEXT NOT NULL,
+  rarity TEXT NOT NULL,
+  duplicate INTEGER NOT NULL DEFAULT 0,
+  coins_spent INTEGER NOT NULL DEFAULT 0,
+  coins_refund INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_gacha_pulls_user ON gacha_pulls(user_id, id);
 CREATE TABLE IF NOT EXISTS audit_log (
   id INTEGER PRIMARY KEY,
   admin_id INTEGER NOT NULL,
@@ -114,12 +126,22 @@ CREATE TABLE IF NOT EXISTS audit_log (
   }
 }
 
+// マイグレーション: 公開予約(scheduled)の実行時刻
+{
+  const cols = db.prepare('PRAGMA table_info(balance_versions)').all();
+  if (!cols.some(c => c.name === 'scheduled_at')) {
+    db.exec('ALTER TABLE balance_versions ADD COLUMN scheduled_at TEXT');
+  }
+}
+
+const SEED_PATH = path.join(__dirname, '..', '..', 'data', 'balance-initial.json');
+const readSeed = () => JSON.parse(fs.readFileSync(SEED_PATH, 'utf8'));
+
 /** 初回起動時: data/balance-initial.json を published 版としてシード */
 function seedBalance() {
   const count = db.prepare('SELECT COUNT(*) AS n FROM balance_versions').get().n;
   if (count > 0) return;
-  const seedPath = path.join(__dirname, '..', '..', 'data', 'balance-initial.json');
-  const snapshot = fs.readFileSync(seedPath, 'utf8');
+  const snapshot = fs.readFileSync(SEED_PATH, 'utf8');
   JSON.parse(snapshot); // validate
   db.prepare(
     `INSERT INTO balance_versions (status, label, snapshot_json, published_at)
@@ -128,5 +150,45 @@ function seedBalance() {
   console.log('[db] 初期バランス版をシードしました');
 }
 seedBalance();
+
+/**
+ * マイグレーション: 既存のバランス版を現行スキーマへ寄せる(冪等)。
+ * 調整済みの値は保持し、不足・廃止された項目だけを直す。
+ *  - pets[].unlock を削除(コイン購入による解放を廃止しガチャへ移行)
+ *  - pets[].rarity と gacha ブロックを初期バランスから補完
+ *  - 実装のないアビリティ healLowestAlly を除去
+ */
+function migrateGacha() {
+  const rows = db.prepare('SELECT id, snapshot_json FROM balance_versions').all();
+  if (rows.length === 0) return;
+  const seed = readSeed();
+  const seedRarity = Object.fromEntries(seed.pets.map(p => [p.id, p.rarity]));
+  const defaultRarity = seed.gacha.rarities[0].id;
+  const update = db.prepare('UPDATE balance_versions SET snapshot_json = ? WHERE id = ?');
+  let migrated = 0;
+  const tx = db.transaction(() => {
+    for (const row of rows) {
+      const s = JSON.parse(row.snapshot_json);
+      let changed = false;
+      for (const p of s.pets || []) {
+        if (p.unlock) { delete p.unlock; changed = true; }
+        if (!p.rarity) { p.rarity = seedRarity[p.id] || defaultRarity; changed = true; }
+      }
+      if (!s.gacha) { s.gacha = seed.gacha; changed = true; }
+      // healLowestAlly はエンジンに実装がない飾りデータだった(回復は attackType=heal + healPower)。
+      // 残っているとアビリティ検証で保存できなくなるため取り除く。
+      for (const p of s.pets || []) {
+        if (p.abilities?.some(a => a.type === 'healLowestAlly')) {
+          p.abilities = p.abilities.filter(a => a.type !== 'healLowestAlly');
+          changed = true;
+        }
+      }
+      if (changed) { update.run(JSON.stringify(s), row.id); migrated++; }
+    }
+  });
+  tx();
+  if (migrated > 0) console.log(`[db] ${migrated}件のバランス版をガチャ対応へ移行しました`);
+}
+migrateGacha();
 
 module.exports = db;

@@ -7,13 +7,31 @@ const { WebSocketServer } = require('ws');
 require('./db'); // スキーマ+シード
 const api = require('./api');
 const admin = require('./admin');
+const balance = require('./balance');
 const { userByToken } = require('./auth');
 const mm = require('./matchmaker');
 
 const PORT = process.env.PORT || 8787;
 
+// 公開予約(scheduled)の自動実行。進行中の試合は開始時の版のまま続く(VERSION-01)
+const SCHEDULE_CHECK_MS = 30000;
+setInterval(() => {
+  for (const id of balance.publishDue()) {
+    console.log(`[balance] 予約公開しました: 版#${id}`);
+  }
+}, SCHEDULE_CHECK_MS).unref();
+
 const app = express();
 app.use(express.json({ limit: '2mb' }));
+
+// ヘルスチェック(Cloud Run 等の起動プローブ用)。DBに触れて実際に応答できるか見る
+app.get('/healthz', (req, res) => {
+  try {
+    res.json({ ok: true, balanceVersionId: balance.getPublished().id, uptimeSec: Math.round(process.uptime()) });
+  } catch (e) {
+    res.status(503).json({ ok: false, error: e.message });
+  }
+});
 app.use('/api/admin', admin);
 app.use('/api', api);
 app.use('/assets', express.static(path.join(__dirname, '..', '..', 'assets')));

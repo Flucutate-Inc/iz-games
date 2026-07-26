@@ -1,0 +1,54 @@
+# わんわん大戦争サーバーのビルド+デプロイ(Cloud Build)。
+# 実行はリポジトリルートから:
+#   gcloud builds submit --config games/wanwan/deploy/cloudbuild.yaml \
+#     --substitutions=_REGION=asia-northeast1,_SERVICE=wanwan,_BUCKET=gs://<bucket>/wanwan
+substitutions:
+  _REGION: asia-northeast1
+  _SERVICE: wanwan
+  _REPO: wanwan
+  _BUCKET: '' # gs://<bucket>/wanwan (空なら永続化なし)
+  _SERVICE_ACCOUNT: '' # Cloud Run 実行SA(空ならデフォルト)
+
+steps:
+  - id: build
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - games/wanwan/Dockerfile
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:$BUILD_ID
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:latest
+      - .
+
+  - id: push
+    name: gcr.io/cloud-builders/docker
+    args: [push, --all-tags, '${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}']
+
+  - id: deploy
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -e
+        # 単一プロセス前提(対戦ルームはメモリ上・SQLiteは1インスタンス)のため max-instances=1。
+        # ゲームループが常時動くので CPU は常時割り当て、WebSocket 用にタイムアウトを延ばす。
+        FLAGS="--region=${_REGION} --platform=managed --allow-unauthenticated \
+          --min-instances=1 --max-instances=1 --concurrency=200 \
+          --cpu=1 --memory=1Gi --no-cpu-throttling --timeout=3600 \
+          --port=8080 --set-env-vars=NODE_ENV=production,WANWAN_DB=/data/wanwan.db"
+        if [ -n "${_BUCKET}" ]; then
+          FLAGS="$FLAGS --set-env-vars=LITESTREAM_REPLICA_URL=${_BUCKET}"
+        fi
+        if [ -n "${_SERVICE_ACCOUNT}" ]; then
+          FLAGS="$FLAGS --service-account=${_SERVICE_ACCOUNT}"
+        fi
+        gcloud run deploy ${_SERVICE} \
+          --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:$BUILD_ID $FLAGS
+
+images:
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_SERVICE}:latest
+options:
+  logging: CLOUD_LOGGING_ONLY

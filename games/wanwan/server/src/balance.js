@@ -5,6 +5,7 @@
  * (Room がスナップショットオブジェクトを保持するため)。
  */
 const db = require('./db');
+const { validateAbilities } = require('./abilities');
 
 let cache = null; // { id, snapshot } 現行 published
 
@@ -30,7 +31,9 @@ function getVersion(id) {
 
 function listVersions() {
   return db
-    .prepare('SELECT id, status, label, base_version_id, created_by, created_at, published_at FROM balance_versions ORDER BY id DESC')
+    .prepare(`SELECT v.id, v.status, v.label, v.base_version_id, v.created_by, v.created_at, v.published_at, v.scheduled_at,
+                     u.name AS created_by_name
+              FROM balance_versions v LEFT JOIN users u ON u.id = v.created_by ORDER BY v.id DESC`)
     .all();
 }
 
@@ -73,11 +76,51 @@ function validateSnapshot(s) {
       errors.push(`facilities.${f} が不正です`);
     }
   }
+  // ガチャ(排出率・コスト・重複還元)
+  const g = s.gacha;
+  const rarityIds = new Set();
+  if (!g) {
+    errors.push('gacha がありません');
+  } else {
+    if (!(g.singleCost >= 0)) errors.push('gacha.singleCost が不正です');
+    if (!(g.multiCount >= 1)) errors.push('gacha.multiCount が不正です');
+    if (!(g.multiCost >= 0)) errors.push('gacha.multiCost が不正です');
+    if (!Array.isArray(g.rarities) || g.rarities.length === 0) {
+      errors.push('gacha.rarities が空です');
+    } else {
+      for (const r of g.rarities) {
+        if (!r.id) { errors.push('id のないレアリティがあります'); continue; }
+        if (rarityIds.has(r.id)) errors.push(`レアリティID重複: ${r.id}`);
+        rarityIds.add(r.id);
+        if (!(r.weight >= 0)) errors.push(`gacha.rarities.${r.id}.weight が不正です`);
+        if (!(r.duplicateCoins >= 0)) errors.push(`gacha.rarities.${r.id}.duplicateCoins が不正です`);
+      }
+      if (!g.rarities.some(r => r.weight > 0)) errors.push('gacha.rarities の重みが全て0です');
+      if (g.multiGuaranteeRarity && !rarityIds.has(g.multiGuaranteeRarity)) {
+        errors.push(`gacha.multiGuaranteeRarity が不明です: ${g.multiGuaranteeRarity}`);
+      }
+      if (g.multiCost > g.singleCost * g.multiCount) {
+        warnings.push(`${g.multiCount}連(${g.multiCost})が単発${g.multiCount}回分(${g.singleCost * g.multiCount})より割高です`);
+      }
+    }
+  }
+
   const ids = new Set();
   for (const p of s.pets || []) {
     if (!p.id) { errors.push('id のないペットがあります'); continue; }
     if (ids.has(p.id)) errors.push(`ペットID重複: ${p.id}`);
     ids.add(p.id);
+    if (rarityIds.size > 0 && !rarityIds.has(p.rarity)) {
+      errors.push(`${p.id}.rarity が不正です: ${p.rarity}`);
+    }
+    errors.push(...validateAbilities(p.id, p.abilities));
+    if (p.attackType === 'heal' && !(p.healPower > 0)) errors.push(`${p.id}.healPower が必要です(attackType=heal)`);
+    if ((p.attackType === 'area' || p.attackType === 'areaSmall') && !(p.areaRadius > 0)) {
+      errors.push(`${p.id}.areaRadius が必要です(attackType=${p.attackType})`);
+    }
+    if (p.spawnCount != null && !(Number.isInteger(p.spawnCount) && p.spawnCount >= 1)) {
+      errors.push(`${p.id}.spawnCount が不正です: ${p.spawnCount}`);
+    }
     for (const [key, [min, max]] of Object.entries(PET_RANGES)) {
       const v = p[key];
       if (v == null || typeof v !== 'number' || v < min || v > max) {
@@ -85,6 +128,23 @@ function validateSnapshot(s) {
       }
     }
   }
+  // 初期付与ペットは実在し、公開されている必要がある
+  for (const petId of s.progression?.initialPets || []) {
+    const pet = (s.pets || []).find(p => p.id === petId);
+    if (!pet) errors.push(`progression.initialPets に不明なペット: ${petId}`);
+    else if (pet.released === false) warnings.push(`初期付与ペット ${petId} が未公開です`);
+  }
+  if ((s.progression?.initialPets || []).length < (r.deck?.min || 0)) {
+    errors.push(`progression.initialPets がデッキ最小数(${r.deck?.min})未満です`);
+  }
+
+  // 抽選対象が1体もいないレアリティは排出されない(率が実質再配分される)
+  for (const r of g?.rarities || []) {
+    if (r.weight > 0 && !(s.pets || []).some(p => p.rarity === r.id && p.released !== false)) {
+      warnings.push(`レアリティ ${r.id} に公開中のペットがいません(排出されません)`);
+    }
+  }
+
   // 効率警告: 同コスト帯の平均から大きく外れる HP・DPS(±80%)
   const byCost = {};
   for (const p of s.pets || []) {
@@ -111,6 +171,79 @@ function updateDraft(id, snapshot) {
   if (errors.length > 0) return { ok: false, errors, warnings };
   db.prepare('UPDATE balance_versions SET snapshot_json = ? WHERE id = ?').run(JSON.stringify(snapshot), id);
   return { ok: true, errors: [], warnings };
+}
+
+/** ラベル(メモ)の変更。公開済みの版でも識別のために変更できる */
+function setLabel(id, label) {
+  const v = getVersion(id);
+  if (!v) throw new Error('版が見つかりません');
+  db.prepare('UPDATE balance_versions SET label = ? WHERE id = ?').run(String(label ?? '').slice(0, 80), id);
+}
+
+/** 不要になった下書き(draft/testing)を削除する。公開済み・過去版は消せない */
+function deleteVersion(id) {
+  const v = getVersion(id);
+  if (!v) throw new Error('版が見つかりません');
+  if (!['draft', 'testing', 'scheduled'].includes(v.status)) {
+    throw new Error(`${v.status} の版は削除できません(draft/testing/scheduled のみ)`);
+  }
+  db.prepare('DELETE FROM balance_versions WHERE id = ?').run(id);
+}
+
+/** 外部JSON(バックアップ・他環境)から下書きを作る */
+function importSnapshot(adminId, snapshot, label) {
+  const { errors, warnings } = validateSnapshot(snapshot);
+  if (errors.length > 0) return { ok: false, errors, warnings };
+  const info = db
+    .prepare("INSERT INTO balance_versions (status, label, snapshot_json, created_by) VALUES ('draft', ?, ?, ?)")
+    .run(label || 'imported', JSON.stringify(snapshot), adminId);
+  return { ok: true, id: info.lastInsertRowid, errors: [], warnings };
+}
+
+/** 公開予約: 指定時刻(ISO文字列)に自動で公開する */
+function schedule(id, atIso) {
+  const v = getVersion(id);
+  if (!v) throw new Error('版が見つかりません');
+  if (!['draft', 'testing', 'scheduled'].includes(v.status)) throw new Error(`${v.status} の版は予約できません`);
+  const at = new Date(atIso);
+  if (Number.isNaN(at.getTime())) throw new Error('予約日時が不正です');
+  if (at.getTime() < Date.now() - 60000) throw new Error('過去の日時は予約できません');
+  const { errors } = validateSnapshot(v.snapshot);
+  if (errors.length > 0) throw new Error('バリデーションエラー: ' + errors.join(' / '));
+  db.prepare("UPDATE balance_versions SET status = 'scheduled', scheduled_at = ? WHERE id = ?")
+    .run(at.toISOString(), id);
+  return at.toISOString();
+}
+
+/** 予約の取り消し(draft へ戻す) */
+function cancelSchedule(id) {
+  const v = getVersion(id);
+  if (!v) throw new Error('版が見つかりません');
+  if (v.status !== 'scheduled') throw new Error('予約されていません');
+  db.prepare("UPDATE balance_versions SET status = 'draft', scheduled_at = NULL WHERE id = ?").run(id);
+}
+
+/**
+ * 予約時刻を過ぎた版を公開する(index.js から定期実行)。
+ * 公開した版IDの配列を返す。
+ */
+function publishDue(now = Date.now()) {
+  const due = db
+    .prepare("SELECT id, scheduled_at FROM balance_versions WHERE status = 'scheduled' ORDER BY scheduled_at")
+    .all()
+    .filter(r => new Date(r.scheduled_at).getTime() <= now);
+  const published = [];
+  for (const row of due) {
+    try {
+      publish(row.id);
+      db.prepare('UPDATE balance_versions SET scheduled_at = NULL WHERE id = ?').run(row.id);
+      published.push(row.id);
+    } catch (e) {
+      console.error(`[balance] 予約公開に失敗(版#${row.id}): ${e.message}`);
+      db.prepare("UPDATE balance_versions SET status = 'draft', scheduled_at = NULL WHERE id = ?").run(row.id);
+    }
+  }
+  return published;
 }
 
 function setTesting(id) {
@@ -163,6 +296,11 @@ function diff(aId, bId) {
   const a = getVersion(aId)?.snapshot;
   const b = getVersion(bId)?.snapshot;
   if (!a || !b) throw new Error('版が見つかりません');
+  return diffSnapshots(a, b);
+}
+
+/** スナップショット同士の差分(保存前の変更点カウントにも使う) */
+function diffSnapshots(a, b) {
   const changes = [];
   const flat = (obj, prefix = '') => {
     const out = {};
@@ -183,7 +321,7 @@ function diff(aId, bId) {
       }
     }
   }
-  for (const section of ['rules', 'facilities', 'progression', 'matchmaking']) {
+  for (const section of ['rules', 'facilities', 'progression', 'matchmaking', 'gacha', 'upgrades']) {
     const fa = flat(a[section] || {}, `${section}.`);
     const fb = flat(b[section] || {}, `${section}.`);
     for (const key of new Set([...Object.keys(fa), ...Object.keys(fb)])) {
@@ -212,9 +350,16 @@ module.exports = {
   updateDraft,
   validateSnapshot,
   setTesting,
+  setLabel,
+  deleteVersion,
+  importSnapshot,
+  schedule,
+  cancelSchedule,
+  publishDue,
   publish,
   rollback,
   diff,
+  diffSnapshots,
   audit,
   invalidateCache,
 };

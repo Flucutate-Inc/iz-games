@@ -1,0 +1,7 @@
+# litestream の設定は entrypoint.sh の -exec 形式で渡すため、通常は使わない。
+# `litestream replicate` を設定ファイルで動かしたい場合の参考。
+dbs:
+  - path: /data/wanwan.db
+    replicas:
+      - url: $LITESTREAM_REPLICA_URL
+        sync-interval: 1s

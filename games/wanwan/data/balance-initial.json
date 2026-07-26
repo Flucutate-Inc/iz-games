@@ -59,7 +59,7 @@
       "dachs-sniper",
       "pomeranian-squad"
     ],
-    "initialCoins": 100,
+    "initialCoins": 300,
     "xp": {
       "win": 50,
       "lose": 20,
@@ -81,6 +81,32 @@
     "ratingWindowStart": 150,
     "ratingWindowGrowPer5Sec": 100,
     "newbieMatchCount": 10
+  },
+  "gacha": {
+    "singleCost": 300,
+    "multiCount": 10,
+    "multiCost": 2700,
+    "multiGuaranteeRarity": "R",
+    "rarities": [
+      {
+        "id": "N",
+        "name": "ノーマル",
+        "weight": 65,
+        "duplicateCoins": 60
+      },
+      {
+        "id": "R",
+        "name": "レア",
+        "weight": 30,
+        "duplicateCoins": 150
+      },
+      {
+        "id": "SR",
+        "name": "超レア",
+        "weight": 5,
+        "duplicateCoins": 400
+      }
+    ]
   },
   "pets": [
     {
@@ -104,9 +130,7 @@
       "subject": "a tiny cheerful shiba inu puppy with cream and tan fur, wearing a small red bandana around its neck",
       "rechargeSec": 6,
       "released": true,
-      "unlock": {
-        "initial": true
-      }
+      "rarity": "N"
     },
     {
       "id": "bulldog",
@@ -136,9 +160,7 @@
       "subject": "a stocky muscular bulldog with a spiked leather collar and a tough grumpy expression",
       "rechargeSec": 9,
       "released": true,
-      "unlock": {
-        "initial": true
-      }
+      "rarity": "N"
     },
     {
       "id": "chihuahua-assault",
@@ -166,10 +188,7 @@
       "subject": "a tiny brave chihuahua wearing a leather aviator cap and goggles, leaning forward ready to dash",
       "rechargeSec": 7,
       "released": true,
-      "unlock": {
-        "level": 2,
-        "price": 300
-      }
+      "rarity": "N"
     },
     {
       "id": "dachs-sniper",
@@ -192,9 +211,7 @@
       "subject": "a long-bodied dachshund wearing a green beret, aiming a long toy cork rifle",
       "rechargeSec": 9,
       "released": true,
-      "unlock": {
-        "initial": true
-      }
+      "rarity": "N"
     },
     {
       "id": "corgi-captain",
@@ -224,10 +241,7 @@
       "subject": "a corgi captain wearing a small military officer cap and gold epaulettes, holding a tiny command flag",
       "rechargeSec": 11,
       "released": true,
-      "unlock": {
-        "level": 6,
-        "price": 1200
-      }
+      "rarity": "SR"
     },
     {
       "id": "shepherd-guard",
@@ -256,10 +270,7 @@
       "subject": "a german shepherd security guard wearing a navy police-style vest and cap",
       "rechargeSec": 11,
       "released": true,
-      "unlock": {
-        "level": 5,
-        "price": 1000
-      }
+      "rarity": "R"
     },
     {
       "id": "pomeranian-squad",
@@ -283,9 +294,7 @@
       "subject": "a fluffy round orange pomeranian puffball with a determined little face",
       "rechargeSec": 7,
       "released": true,
-      "unlock": {
-        "initial": true
-      }
+      "rarity": "N"
     },
     {
       "id": "husky-artillery",
@@ -309,10 +318,7 @@
       "subject": "a siberian husky artillery soldier wearing a green helmet, carrying a small toy cannon on its back",
       "rechargeSec": 11,
       "released": true,
-      "unlock": {
-        "level": 4,
-        "price": 800
-      }
+      "rarity": "R"
     },
     {
       "id": "saint-bernard",
@@ -341,10 +347,7 @@
       "subject": "a huge gentle saint bernard with a wooden rescue barrel on its collar and light armor plates",
       "rechargeSec": 14,
       "released": true,
-      "unlock": {
-        "level": 7,
-        "price": 1500
-      }
+      "rarity": "SR"
     },
     {
       "id": "border-collie",
@@ -374,10 +377,7 @@
       "subject": "a sleek black and white border collie with a sporty blue scarf, in an agile running stance",
       "rechargeSec": 9,
       "released": true,
-      "unlock": {
-        "level": 3,
-        "price": 500
-      }
+      "rarity": "R"
     },
     {
       "id": "poodle-mage",
@@ -407,10 +407,7 @@
       "subject": "a white toy poodle wizard wearing a purple star-patterned wizard hat and cape, holding a glowing magic wand",
       "rechargeSec": 9,
       "released": true,
-      "unlock": {
-        "level": 4,
-        "price": 800
-      }
+      "rarity": "R"
     },
     {
       "id": "beagle-expedition",
@@ -434,10 +431,7 @@
       "subject": "a beagle explorer wearing a khaki safari hat and a small backpack, holding a little pickaxe",
       "rechargeSec": 9,
       "released": true,
-      "unlock": {
-        "level": 3,
-        "price": 500
-      }
+      "rarity": "R"
     },
     {
       "id": "pug-bomber",
@@ -467,10 +461,7 @@
       "subject": "a round fawn pug soldier carrying a black cartoon bomb with a lit sparking fuse strapped to its back",
       "rechargeSec": 7,
       "released": true,
-      "unlock": {
-        "level": 2,
-        "price": 300
-      }
+      "rarity": "N"
     },
     {
       "id": "owl-courier",
@@ -494,10 +485,7 @@
       "subject": "a small brown owl wearing a delivery messenger bag with a strap, wings spread mid-flight",
       "rechargeSec": 9,
       "released": true,
-      "unlock": {
-        "level": 5,
-        "price": 1000
-      }
+      "rarity": "R"
     },
     {
       "id": "rabbit-medic",
@@ -517,21 +505,11 @@
       "attackType": "heal",
       "collisionRadius": 14,
       "knockbackCount": 2,
-      "abilities": [
-        {
-          "type": "healLowestAlly",
-          "amount": 220,
-          "excludeSelf": true,
-          "excludeBuildings": true
-        }
-      ],
+      "abilities": [],
       "subject": "a white rabbit medic wearing a nurse cap with a red cross, carrying a small first-aid satchel",
       "rechargeSec": 11,
       "released": true,
-      "unlock": {
-        "level": 6,
-        "price": 1200
-      }
+      "rarity": "SR"
     },
     {
       "id": "great-dane-king",
@@ -561,10 +539,7 @@
       "subject": "a majestic great dane king wearing a golden crown and a royal red cape with white fur trim",
       "rechargeSec": 16,
       "released": true,
-      "unlock": {
-        "level": 8,
-        "price": 2000
-      }
+      "rarity": "SR"
     }
   ],
   "upgrades": {

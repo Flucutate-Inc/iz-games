@@ -43,13 +43,21 @@
       <div id="home-deck-summary" class="deck-summary"></div>
     </div>
 
+    <div class="panel gacha-panel">
+      <div class="panel-head">
+        <span class="panel-title">🎁 ガチャ</span>
+        <button class="btn small nav" data-nav="gacha">ひく</button>
+      </div>
+      <p class="terms">コインを使って新しいなかまを迎えられます。</p>
+    </div>
+
     <div class="panel iz-panel hidden" id="iz-shop">
-      <div class="panel-head"><span class="panel-title">🪙 コインを購入</span></div>
-      <p class="terms">IZ を使ってコインを購入できます。コインは新しいペットの解放に使えます。</p>
+      <div class="panel-head"><span class="panel-title"><i class="coin"></i> コインを購入</span></div>
+      <p class="terms">IZ を使ってコインを購入できます。コインはガチャに使えます。</p>
       <div class="iz-row">
-        <button class="btn iz-buy" data-iz="10">10 IZ<small>→ 100🪙</small></button>
-        <button class="btn iz-buy" data-iz="50">50 IZ<small>→ 500🪙</small></button>
-        <button class="btn iz-buy" data-iz="100">100 IZ<small>→ 1000🪙</small></button>
+        <button class="btn iz-buy" data-iz="10">10 IZ<small>→ 100<i class="coin"></i></small></button>
+        <button class="btn iz-buy" data-iz="50">50 IZ<small>→ 500<i class="coin"></i></small></button>
+        <button class="btn iz-buy" data-iz="100">100 IZ<small>→ 1000<i class="coin"></i></small></button>
       </div>
       <p id="iz-msg" class="error"></p>
     </div>
@@ -154,6 +162,39 @@
   <div id="dex-facilities" class="dex-panels hidden"></div>
   <div id="dex-upgrades" class="dex-panels hidden"></div>
   <div id="dex-detail" class="modal hidden"><div class="card modal-card" id="dex-detail-body"></div></div>
+</section>
+
+<!-- ガチャ -->
+<section id="screen-gacha" class="screen hidden">
+  <header class="appbar">
+    <button class="btn back" data-nav="home">← ホーム</button>
+    <h2>🎁 ガチャ</h2>
+    <span id="gacha-coins" class="coin-chip"></span>
+  </header>
+  <div class="gacha-page">
+    <div class="card gacha-banner">
+      <img class="gacha-art" src="/assets/ui/icon-treat.png" alt="">
+      <h3>わんわんガチャ</h3>
+      <p class="terms">コインを使って新しいなかまを迎えよう。すでになかまのわんこが出たときはコインが戻ってきます。</p>
+      <div class="gacha-actions">
+        <button id="btn-gacha-1" class="btn primary big">1回ひく</button>
+        <button id="btn-gacha-10" class="btn big">10回ひく</button>
+      </div>
+      <p id="gacha-error" class="error"></p>
+    </div>
+
+    <div class="card">
+      <div class="panel-head"><span class="panel-title">提供割合</span></div>
+      <table class="stat-table" id="gacha-rates"></table>
+      <p id="gacha-guarantee" class="terms"></p>
+    </div>
+
+    <div class="card">
+      <div class="panel-head"><span class="panel-title">ラインナップ</span></div>
+      <div id="gacha-pool"></div>
+    </div>
+  </div>
+  <div id="gacha-result" class="modal hidden"><div class="card modal-card" id="gacha-result-body"></div></div>
 </section>
 
 <!-- ランキング -->

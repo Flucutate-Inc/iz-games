@@ -147,4 +147,28 @@ function roomOf(userId) {
   return userRoom.get(userId) || null;
 }
 
-module.exports = { joinQueue, leaveQueue, createRoomCode, joinRoomCode, startPractice, roomOf, activeRooms };
+/** 管理画面の稼働状況用: 待機列(あいことば待ちを除く) */
+function queueInfo() {
+  const now = Date.now();
+  return queue.map(e => ({
+    userId: e.userId,
+    name: e.name,
+    rating: e.rating,
+    waitSec: Math.round((now - e.joinedAt) / 1000),
+  }));
+}
+
+/** 管理画面の稼働状況用: 発行済みのあいことば(コードは伏せる) */
+function roomCodeInfo() {
+  const now = Date.now();
+  return [...roomCodes.values()].map(e => ({
+    userId: e.userId,
+    name: e.name,
+    waitSec: Math.round((now - e.joinedAt) / 1000),
+  }));
+}
+
+module.exports = {
+  joinQueue, leaveQueue, createRoomCode, joinRoomCode, startPractice, roomOf,
+  activeRooms, queueInfo, roomCodeInfo,
+};
