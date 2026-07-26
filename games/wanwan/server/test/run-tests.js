@@ -491,6 +491,35 @@ console.log('version lifecycle tests:');
   });
 }
 
+// ── 管理者の決まり方 ──
+console.log('admin bootstrap tests:');
+{
+  const db = require('../src/db');
+  const auth = require('../src/auth');
+  const isAdmin = name => db.prepare('SELECT is_admin FROM users WHERE name = ?').get(name).is_admin;
+
+  test('WANWAN_ADMIN_NAMES 未設定なら最初の登録者が管理者', () => {
+    delete process.env.WANWAN_ADMIN_NAMES;
+    db.prepare('DELETE FROM sessions').run();
+    db.prepare('DELETE FROM decks').run();
+    db.prepare('DELETE FROM user_pets').run();
+    db.prepare('DELETE FROM users').run();
+    auth.register('firstuser', 'password1');
+    auth.register('seconduser', 'password1');
+    assert.equal(isAdmin('firstuser'), 1);
+    assert.equal(isAdmin('seconduser'), 0);
+  });
+
+  test('WANWAN_ADMIN_NAMES 指定時はその表示名だけが管理者(公開URL向け)', () => {
+    process.env.WANWAN_ADMIN_NAMES = 'owner1, owner2';
+    auth.register('randomuser', 'password1'); // 先に登録しても管理者にならない
+    auth.register('owner2', 'password1');
+    assert.equal(isAdmin('randomuser'), 0);
+    assert.equal(isAdmin('owner2'), 1);
+    delete process.env.WANWAN_ADMIN_NAMES;
+  });
+}
+
 // ── Firebase ID トークン検証(IZ 自動ログイン用) ──
 (async () => {
   console.log('firebase-auth tests:');

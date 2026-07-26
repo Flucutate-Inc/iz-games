@@ -69,13 +69,20 @@ IAP か Firebase Hosting のリライト経由で公開する構成に変更す�
 | `PORT` | 8080 | Cloud Run が渡す |
 | `WANWAN_DB` | `/data/wanwan.db` | SQLite の場所 |
 | `LITESTREAM_REPLICA_URL` | (deploy.sh が設定) | `gs://<bucket>/wanwan` |
+| `WANWAN_ADMIN_NAMES` | 未設定 | 管理者にする表示名(カンマ区切り)。**公開URLでは必ず設定する** |
 | `WANWAN_RECEIPT_SECRET` | 未設定 | IZ課金レシートの検証鍵。IZ側 Secret `GAME_RECEIPT_SECRET` と同じ値 |
 | `FIREBASE_PROJECT` | `iz-app-6e1d5` | IZアカウント自動ログインの検証先 |
 
 ## デプロイ後
 
-1. **管理者の作成**: 最初に登録したアカウントが管理者になる。デプロイ直後に自分で登録すること
-   (放置すると他人が最初の登録者=管理者になる)。以後は管理画面の「アカウント」タブから権限を付与できる。
+1. **管理者の指定**: 公開URLでは `WANWAN_ADMIN_NAMES` に自分の表示名を設定してからデプロイすること。
+   設定しておけば、その表示名で登録したときだけ管理者になる(第三者が先に登録しても管理者にならない)。
+   ```bash
+   gcloud run services update wanwan --region asia-northeast1 \
+     --update-env-vars=WANWAN_ADMIN_NAMES=<あなたの表示名>
+   ```
+   未設定のままだと従来どおり「最初に登録した人」が管理者になる(ローカル検証用の挙動)。
+   以後の追加・剥奪は管理画面の「アカウント」タブから行う。
 2. **IZ課金**: 使う場合のみ、IZ側と同じ鍵を設定する。
    ```bash
    gcloud run services update wanwan --region asia-northeast1 \

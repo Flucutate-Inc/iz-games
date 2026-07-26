@@ -25,10 +25,22 @@ function register(name, password) {
   return createSession(userId);
 }
 
+/**
+ * 管理者にするかどうか。
+ * 公開URLでは「最初に登録した人が管理者」だと第三者に管理画面を取られるため、
+ * `WANWAN_ADMIN_NAMES`(カンマ区切り)が設定されていればその表示名だけを管理者にする。
+ * 未設定のときだけ従来どおり最初の登録者を管理者にする(ローカル検証用)。
+ */
+function shouldBeAdmin(name) {
+  const allowed = (process.env.WANWAN_ADMIN_NAMES || '').split(',').map(s => s.trim()).filter(Boolean);
+  if (allowed.length > 0) return allowed.includes(name);
+  return db.prepare('SELECT COUNT(*) AS n FROM users').get().n === 0;
+}
+
 /** 初期4体+初期デッキ付き(ACC-01)でユーザーを作成する共通処理 */
 function createUserWithGrants({ name, passHash, salt, firebaseUid = null }) {
   const prog = balance.getPublished().snapshot.progression;
-  const isFirst = db.prepare('SELECT COUNT(*) AS n FROM users').get().n === 0;
+  const isFirst = shouldBeAdmin(name);
   const tx = db.transaction(() => {
     const info = db
       .prepare('INSERT INTO users (name, pass_hash, salt, is_admin, coins, rating, firebase_uid) VALUES (?, ?, ?, ?, ?, ?, ?)')
