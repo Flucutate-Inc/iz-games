@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <meta name="theme-color" content="#fff6d8" />
+    <title>ポンパタ郵便局</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main class="game">
+      <header class="hud" aria-live="polite">
+        <div>
+          <span class="hud-label">SCORE</span>
+          <strong id="score">0</strong>
+        </div>
+        <div class="hud-center">
+          <span class="hud-label">ROUND</span>
+          <strong><span id="round">1</span> / 3</strong>
+        </div>
+        <div>
+          <span class="hud-label">COMBO</span>
+          <strong id="combo">0</strong>
+        </div>
+      </header>
+
+      <section class="stage" aria-label="郵便スタンプのリズムゲーム">
+        <div class="sun" aria-hidden="true"></div>
+        <div class="cloud cloud-one" aria-hidden="true"></div>
+        <div class="cloud cloud-two" aria-hidden="true"></div>
+        <div id="bird" class="bird" aria-hidden="true">
+          <span class="bird-wing"></span>
+          <span class="bird-eye"></span>
+          <span class="bird-beak"></span>
+        </div>
+
+        <div id="callout" class="callout" aria-live="assertive">よーく見て！</div>
+
+        <div class="counter">
+          <div id="stamp" class="stamp" aria-hidden="true">
+            <span class="stamp-handle"></span>
+            <span class="stamp-base"></span>
+          </div>
+          <div class="target" aria-hidden="true"></div>
+          <div id="letter" class="letter" aria-hidden="true">
+            <span class="letter-lines"></span>
+            <span class="letter-mark"></span>
+          </div>
+          <div class="belt" aria-hidden="true"></div>
+        </div>
+      </section>
+
+      <button id="hit-btn" class="hit-btn" type="button" aria-label="スタンプを押す">
+        <span class="hit-main">ポン！</span>
+        <span class="hit-sub">タップ / SPACE</span>
+      </button>
+
+      <section id="start-view" class="overlay">
+        <div class="card">
+          <p class="eyebrow">RHYTHM POST OFFICE</p>
+          <h1>ポンパタ<br />郵便局</h1>
+          <div class="rule">
+            <span class="rule-icon">〒</span>
+            <p>手紙が真ん中に来たら<br /><strong>リズムに合わせて「ポン！」</strong></p>
+          </div>
+          <button id="start-btn" class="primary-btn" type="button">お仕事スタート</button>
+          <p class="note">音が出ます。タップまたは SPACE キーで遊べます。</p>
+        </div>
+      </section>
+
+      <section id="result-view" class="overlay hidden">
+        <div class="card result-card">
+          <p class="eyebrow">TODAY'S REPORT</p>
+          <div id="rank-face" class="rank-face" aria-hidden="true">◎</div>
+          <h2 id="result-title">おみごと！</h2>
+          <p class="final-score"><span id="final-score">0</span> 点</p>
+          <dl class="breakdown">
+            <div><dt>ジャスト</dt><dd id="perfect-count">0</dd></div>
+            <div><dt>グッド</dt><dd id="good-count">0</dd></div>
+            <div><dt>ミス</dt><dd id="miss-count">0</dd></div>
+          </dl>
+          <button id="retry-btn" class="primary-btn" type="button">もう一度</button>
+        </div>
+      </section>
+    </main>
+
+    <script src="./main.js"></script>
+  </body>
+</html>

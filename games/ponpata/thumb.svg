@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360" role="img" aria-label="ポンパタ郵便局">
+  <rect width="640" height="360" rx="28" fill="#fff6d8"/>
+  <path d="M0 0h640v204H0z" fill="#8bd6e6"/>
+  <circle cx="556" cy="68" r="38" fill="#ffd44d" stroke="#17233b" stroke-width="8"/>
+  <path d="M0 238h640v122H0z" fill="#d9824f"/>
+  <rect x="-20" y="194" width="680" height="38" rx="19" fill="#718092" stroke="#17233b" stroke-width="8"/>
+  <g stroke="#17233b" stroke-width="8">
+    <path d="M307 62h55v129h-55z" rx="18" fill="#f04f4f"/>
+    <path d="M287 164h95v54h-95z" fill="#c52f3b"/>
+    <rect x="268" y="190" width="132" height="85" rx="8" fill="#fffdf4"/>
+    <path d="m268 190 66 45 66-45" fill="none"/>
+  </g>
+  <g transform="translate(88 91)" stroke="#17233b" stroke-width="8">
+    <ellipse cx="64" cy="70" rx="55" ry="53" fill="#4da9c4"/>
+    <circle cx="81" cy="57" r="6" fill="#17233b" stroke="none"/>
+    <path d="m112 68 32 13-32 13z" fill="#ffd44d"/>
+    <path d="M26 75-5 99l37 10" fill="#70c5da"/>
+  </g>
+  <text x="426" y="304" fill="#17233b" font-family="sans-serif" font-size="42" font-weight="900" text-anchor="middle">ポンパタ郵便局</text>
+</svg>

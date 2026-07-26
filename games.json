@@ -16,6 +16,13 @@
       "description": "ビルを駆け、迫る谷を2段ジャンプで飛び越えろ！走った距離を競う白黒ランナー。",
       "url": "https://flucutate-inc.github.io/iz-games/games/birusou/index.html",
       "thumbnail": "https://flucutate-inc.github.io/iz-games/games/birusou/thumb.svg"
+    },
+    {
+      "id": "ponpata",
+      "name": "ポンパタ郵便局",
+      "description": "手紙が真ん中に来たらポン！テンポに合わせてスタンプを押す、1ボタンのリズムゲーム。",
+      "url": "https://flucutate-inc.github.io/iz-games/games/ponpata/index.html",
+      "thumbnail": "https://flucutate-inc.github.io/iz-games/games/ponpata/thumb.svg"
     }
   ]
 }

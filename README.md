@@ -57,9 +57,13 @@ games/<id>/index.html    ──load───▶ WebView / iframe
 ## ローカルで試す
 
 ```bash
-npx serve . -l 5055
+python3 -m http.server 5055
+# Node.js を使う場合: npx serve . -l 5055
 # → http://localhost:5055/games.json をアプリの EXPO_PUBLIC_IZ_GAMES_MANIFEST_URL に設定
 ```
+
+ゲーム単体はブラウザで `http://localhost:5055/games/<id>/index.html` を開いて確認できる。
+Docker やデータベースは不要。
 
 ## ライセンス
 
