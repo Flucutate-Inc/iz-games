@@ -498,8 +498,8 @@ console.log('admin bootstrap tests:');
   const auth = require('../src/auth');
   const isAdmin = name => db.prepare('SELECT is_admin FROM users WHERE name = ?').get(name).is_admin;
 
-  test('WANWAN_ADMIN_NAMES 未設定なら最初の登録者が管理者', () => {
-    delete process.env.WANWAN_ADMIN_NAMES;
+  test('WANWAN_ADMIN_TOKEN 未設定なら最初の登録者が管理者(ローカル検証用)', () => {
+    delete process.env.WANWAN_ADMIN_TOKEN;
     db.prepare('DELETE FROM sessions').run();
     db.prepare('DELETE FROM decks').run();
     db.prepare('DELETE FROM user_pets').run();
@@ -510,13 +510,27 @@ console.log('admin bootstrap tests:');
     assert.equal(isAdmin('seconduser'), 0);
   });
 
-  test('WANWAN_ADMIN_NAMES 指定時はその表示名だけが管理者(公開URL向け)', () => {
-    process.env.WANWAN_ADMIN_NAMES = 'owner1, owner2';
-    auth.register('randomuser', 'password1'); // 先に登録しても管理者にならない
-    auth.register('owner2', 'password1');
-    assert.equal(isAdmin('randomuser'), 0);
-    assert.equal(isAdmin('owner2'), 1);
-    delete process.env.WANWAN_ADMIN_NAMES;
+  test('WANWAN_ADMIN_TOKEN 設定時はトークン一致の登録だけが管理者(公開URL向け)', () => {
+    process.env.WANWAN_ADMIN_TOKEN = 'super-secret-token';
+    auth.register('stranger1', 'password1');                      // トークンなし
+    auth.register('stranger2', 'password1', 'wrong-token-value'); // 誤ったトークン(長さ違い)
+    auth.register('stranger3', 'password1', 'super-secret-tokeN'); // 1文字違い(長さ同じ)
+    auth.register('realowner', 'password1', 'super-secret-token');
+    assert.equal(isAdmin('stranger1'), 0);
+    assert.equal(isAdmin('stranger2'), 0);
+    assert.equal(isAdmin('stranger3'), 0);
+    assert.equal(isAdmin('realowner'), 1);
+  });
+
+  test('WANWAN_ADMIN_TOKEN 設定中は「最初の登録者」ルールが無効になる', () => {
+    process.env.WANWAN_ADMIN_TOKEN = 'another-secret';
+    db.prepare('DELETE FROM sessions').run();
+    db.prepare('DELETE FROM decks').run();
+    db.prepare('DELETE FROM user_pets').run();
+    db.prepare('DELETE FROM users').run();
+    auth.register('firstcomer', 'password1'); // DBが空でもトークンなしなら管理者にならない
+    assert.equal(isAdmin('firstcomer'), 0);
+    delete process.env.WANWAN_ADMIN_TOKEN;
   });
 }
 

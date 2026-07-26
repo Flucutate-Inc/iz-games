@@ -12,7 +12,8 @@ const router = express.Router();
 
 router.post('/register', (req, res, next) => {
   try {
-    res.json(register(req.body.name, req.body.password));
+    // adminToken は初期管理者を作るときだけ使う(WANWAN_ADMIN_TOKEN と一致した場合のみ)
+    res.json(register(req.body.name, req.body.password, req.body.adminToken));
   } catch (e) { next(e); }
 });
 

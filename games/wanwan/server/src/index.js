@@ -13,13 +13,23 @@ const mm = require('./matchmaker');
 
 const PORT = process.env.PORT || 8787;
 
-// 公開予約(scheduled)の自動実行。進行中の試合は開始時の版のまま続く(VERSION-01)
+/**
+ * 公開予約(scheduled)の自動実行。進行中の試合は開始時の版のまま続く(VERSION-01)。
+ * 例外で定期処理が止まらないよう必ず捕捉する。
+ * ゼロスケール構成では待機中に動かないため、起動直後にも一度実行して取りこぼしを拾う。
+ */
 const SCHEDULE_CHECK_MS = 30000;
-setInterval(() => {
-  for (const id of balance.publishDue()) {
-    console.log(`[balance] 予約公開しました: 版#${id}`);
+function runScheduledPublish() {
+  try {
+    for (const id of balance.publishDue()) {
+      console.log(`[balance] 予約公開しました: 版#${id}`);
+    }
+  } catch (e) {
+    console.error('[balance] 予約公開の確認に失敗:', e.message);
   }
-}, SCHEDULE_CHECK_MS).unref();
+}
+runScheduledPublish();
+setInterval(runScheduledPublish, SCHEDULE_CHECK_MS).unref();
 
 const app = express();
 app.use(express.json({ limit: '2mb' }));

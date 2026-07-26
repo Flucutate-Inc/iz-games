@@ -8,7 +8,7 @@ substitutions:
   _REPO: wanwan
   _BUCKET: '' # gs://<bucket>/wanwan (空なら永続化なし)
   _SERVICE_ACCOUNT: '' # Cloud Run 実行SA(空ならデフォルト)
-  _ADMIN_NAMES: '' # 管理者にする表示名(カンマ区切り)。公開URLでは必ず指定する
+  _ADMIN_TOKEN: '' # 初期管理者を作るための秘密トークン。作成後は外すこと
 
 steps:
   - id: build
@@ -35,16 +35,20 @@ steps:
       - |
         set -e
         # 単一プロセス前提(対戦ルームはメモリ上・SQLiteは1インスタンス)のため max-instances=1。
-        # ゲームループが常時動くので CPU は常時割り当て、WebSocket 用にタイムアウトを延ばす。
+        #
+        # 無料枠に収めるため min-instances=0(ゼロスケール)＋CPUはリクエスト中のみ割り当て。
+        # WebSocket 接続は「実行中のリクエスト」なので、対戦中はCPUが割り当てられ
+        # 20Hzの戦闘ループも動く。誰も接続していない間だけ停止し、課金も止まる。
+        # 常時起動にしたい場合は --min-instances=1 --no-cpu-throttling を付ける(有料)。
         FLAGS="--region=${_REGION} --platform=managed --allow-unauthenticated \
-          --min-instances=1 --max-instances=1 --concurrency=200 \
-          --cpu=1 --memory=1Gi --no-cpu-throttling --timeout=3600 \
+          --min-instances=0 --max-instances=1 --concurrency=250 \
+          --cpu=1 --memory=512Mi --timeout=3600 \
           --port=8080 --set-env-vars=NODE_ENV=production,WANWAN_DB=/data/wanwan.db"
         if [ -n "${_BUCKET}" ]; then
           FLAGS="$FLAGS --set-env-vars=LITESTREAM_REPLICA_URL=${_BUCKET}"
         fi
-        if [ -n "${_ADMIN_NAMES}" ]; then
-          FLAGS="$FLAGS --set-env-vars=^@^WANWAN_ADMIN_NAMES=${_ADMIN_NAMES}"
+        if [ -n "${_ADMIN_TOKEN}" ]; then
+          FLAGS="$FLAGS --set-env-vars=^@^WANWAN_ADMIN_TOKEN=${_ADMIN_TOKEN}"
         fi
         if [ -n "${_SERVICE_ACCOUNT}" ]; then
           FLAGS="$FLAGS --service-account=${_SERVICE_ACCOUNT}"

@@ -16,19 +16,21 @@ ENV NODE_ENV=production
 ENV WANWAN_DB=/data/wanwan.db
 ENV PORT=8080
 
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates curl \
-  && rm -rf /var/lib/apt/lists/*
-
 # litestream(SQLite を継続的にオブジェクトストレージへ複製するサイドカー)
-# 配布物の差し替え検知のため SHA-256 を固定して検証する
+# 配布物の差し替え検知のため SHA-256 を固定して検証する。
+# イメージを小さく保つため(Artifact Registry の無料枠 0.5GB)、
+# 取得に使った curl は同じレイヤーで削除する。ca-certificates は GCS への TLS で必要。
 ARG LITESTREAM_VERSION=0.3.13
 ARG LITESTREAM_SHA256=eb75a3de5cab03875cdae9f5f539e6aedadd66607003d9b1e7a9077948818ba0
-RUN curl -fsSL -o /tmp/litestream.tar.gz \
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates curl \
+  && curl -fsSL -o /tmp/litestream.tar.gz \
     "https://github.com/benbjohnson/litestream/releases/download/v${LITESTREAM_VERSION}/litestream-v${LITESTREAM_VERSION}-linux-amd64.tar.gz" \
   && echo "${LITESTREAM_SHA256}  /tmp/litestream.tar.gz" | sha256sum -c - \
   && tar -xz -C /usr/local/bin -f /tmp/litestream.tar.gz litestream \
-  && rm /tmp/litestream.tar.gz
+  && rm /tmp/litestream.tar.gz \
+  && apt-get purge -y curl && apt-get autoremove -y \
+  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY --from=deps /app/node_modules ./games/wanwan/server/node_modules

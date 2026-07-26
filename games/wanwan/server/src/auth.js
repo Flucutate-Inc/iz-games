@@ -1,6 +1,6 @@
 /**
  * 認証(表示名+パスワード、scrypt)。方式は依頼書で未確定のため最小構成
- * (design/spec.md §9)。最初に登録したユーザーが管理者になる(MVP運用)。
+ * (design/spec.md §9)。初期管理者の付与は isAdminBootstrap() を参照。
  */
 const crypto = require('crypto');
 const db = require('./db');
@@ -10,7 +10,7 @@ function hashPassword(password, salt) {
   return crypto.scryptSync(password, salt, 64).toString('hex');
 }
 
-function register(name, password) {
+function register(name, password, adminToken) {
   if (typeof name !== 'string' || !/^[\w\-ぁ-んァ-ヶ一-龠ー]{2,16}$/u.test(name)) {
     throw httpError(400, '表示名は2〜16文字(英数・かな・漢字)で入力してください');
   }
@@ -21,30 +21,40 @@ function register(name, password) {
   if (exists) throw httpError(409, 'その表示名は使用されています');
 
   const salt = crypto.randomBytes(16).toString('hex');
-  const userId = createUserWithGrants({ name, passHash: hashPassword(password, salt), salt });
+  const userId = createUserWithGrants({
+    name, passHash: hashPassword(password, salt), salt, isAdmin: isAdminBootstrap(adminToken),
+  });
   return createSession(userId);
 }
 
 /**
- * 管理者にするかどうか。
- * 公開URLでは「最初に登録した人が管理者」だと第三者に管理画面を取られるため、
- * `WANWAN_ADMIN_NAMES`(カンマ区切り)が設定されていればその表示名だけを管理者にする。
- * 未設定のときだけ従来どおり最初の登録者を管理者にする(ローカル検証用)。
+ * 初期管理者の付与判定。
+ *
+ * 公開URLでは「最初に登録した人が管理者」も「特定の表示名なら管理者」も危険
+ * (前者は第三者に先を越され、後者は表示名を知られると先に取られる)。
+ * そのため **デプロイ時に設定した秘密トークン `WANWAN_ADMIN_TOKEN` を
+ * 登録リクエストに添えた場合のみ** 管理者にする(タイミング安全比較)。
+ * トークンが設定されている間は「最初の登録者」ルールを完全に無効化する。
+ *
+ * トークン未設定のときだけ、ローカル検証用に最初の登録者を管理者にする。
+ * 初期管理者を作ったらトークンは環境変数から外すこと(以後の付与は管理画面から)。
  */
-function shouldBeAdmin(name) {
-  const allowed = (process.env.WANWAN_ADMIN_NAMES || '').split(',').map(s => s.trim()).filter(Boolean);
-  if (allowed.length > 0) return allowed.includes(name);
+function isAdminBootstrap(adminToken) {
+  const expected = process.env.WANWAN_ADMIN_TOKEN || '';
+  if (expected) {
+    if (typeof adminToken !== 'string' || adminToken.length !== expected.length) return false;
+    return crypto.timingSafeEqual(Buffer.from(adminToken), Buffer.from(expected));
+  }
   return db.prepare('SELECT COUNT(*) AS n FROM users').get().n === 0;
 }
 
 /** 初期4体+初期デッキ付き(ACC-01)でユーザーを作成する共通処理 */
-function createUserWithGrants({ name, passHash, salt, firebaseUid = null }) {
+function createUserWithGrants({ name, passHash, salt, firebaseUid = null, isAdmin = false }) {
   const prog = balance.getPublished().snapshot.progression;
-  const isFirst = shouldBeAdmin(name);
   const tx = db.transaction(() => {
     const info = db
       .prepare('INSERT INTO users (name, pass_hash, salt, is_admin, coins, rating, firebase_uid) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .run(name, passHash, salt, isFirst ? 1 : 0, prog.initialCoins, 1000, firebaseUid);
+      .run(name, passHash, salt, isAdmin ? 1 : 0, prog.initialCoins, 1000, firebaseUid);
     const userId = info.lastInsertRowid;
     const addPet = db.prepare('INSERT INTO user_pets (user_id, pet_id) VALUES (?, ?)');
     for (const petId of prog.initialPets) addPet.run(userId, petId);

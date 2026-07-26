@@ -357,8 +357,11 @@ router.get('/matches', (req, res) => {
      WHERE ${where.join(' AND ')}${sql}
      ORDER BY m.started_at DESC LIMIT ?`,
   ).all(...extra, ...params, limit);
-  const reasons = Object.fromEntries(
-    db.prepare("SELECT match_id, data_json FROM match_events WHERE type = 'match_end'").all()
+  // 決着理由は表示対象の試合ぶんだけ引く(match_events 全体は読まない)
+  const placeholders = rows.map(() => '?').join(',');
+  const reasons = rows.length === 0 ? {} : Object.fromEntries(
+    db.prepare(`SELECT match_id, data_json FROM match_events WHERE type = 'match_end' AND match_id IN (${placeholders})`)
+      .all(...rows.map(m => m.id))
       .map(r => [r.match_id, JSON.parse(r.data_json).reason]),
   );
   res.json({
@@ -386,59 +389,82 @@ router.get('/matches/:id', (req, res, next) => {
 
 // ─── 分析 ──────────────────────────────────────────────────────
 
-/** KPI: 登録・アクティブ・試合数・決着理由・切断・レート分布 */
+/**
+ * KPI: 登録・アクティブ・試合数・決着理由・切断・レート分布。
+ * 件数の増加に耐えるよう、集計は SQL 側で行う(全件をJSへ読み出さない)。
+ */
 router.get('/stats/overview', (req, res) => {
-  const { sql, params } = rangeFilter(req, 'started_at');
-  const matches = db.prepare(
-    `SELECT result, duration_sec, balance_version_id, started_at, id FROM matches WHERE ended_at IS NOT NULL${sql}`,
-  ).all(...params);
-  const ids = new Set(matches.map(m => m.id));
+  const { sql, params } = rangeFilter(req, { column: 'started_at' });
+  const joined = rangeFilter(req, { column: 'started_at', prefix: 'm' }); // JOIN 用(列名を m. で修飾)
+  const matchWhere = `WHERE ended_at IS NOT NULL${sql}`;
+
+  const agg = db.prepare(
+    `SELECT COUNT(*) AS matches,
+            SUM(CASE WHEN result = 'draw' THEN 1 ELSE 0 END) AS draws,
+            AVG(duration_sec) AS avgDuration
+     FROM matches ${matchWhere}`,
+  ).get(...params);
+  // 中央値は1列だけ取り出して求める(全カラムのロードは避ける)
+  const median = db.prepare(
+    `SELECT duration_sec AS d FROM matches ${matchWhere} AND duration_sec IS NOT NULL
+     ORDER BY duration_sec LIMIT 1 OFFSET (SELECT COUNT(*) / 2 FROM matches ${matchWhere} AND duration_sec IS NOT NULL)`,
+  ).get(...params, ...params);
+
+  // 決着理由: 対象の試合に紐づくイベントだけを結合して数える
   const reasons = {};
-  for (const r of db.prepare("SELECT match_id, data_json FROM match_events WHERE type = 'match_end'").all()) {
-    if (!ids.has(r.match_id)) continue;
+  for (const r of db.prepare(
+    `SELECT e.data_json FROM match_events e
+     JOIN matches m ON m.id = e.match_id
+     WHERE e.type = 'match_end' AND m.ended_at IS NOT NULL${joined.sql}`,
+  ).all(...joined.params)) {
     const reason = JSON.parse(r.data_json).reason || 'unknown';
     reasons[reason] = (reasons[reason] || 0) + 1;
   }
-  const durations = matches.map(m => m.duration_sec || 0).sort((a, b) => a - b);
-  const byDay = {};
-  for (const m of matches) {
-    const day = String(m.started_at).slice(0, 10);
-    byDay[day] = (byDay[day] || 0) + 1;
-  }
-  const users = db.prepare('SELECT rating, created_at, last_login_at, disconnects, matches_played FROM users').all();
-  const bucket = {};
-  for (const u of users) {
-    if (!u.matches_played) continue;
-    const b = `${Math.floor(u.rating / 100) * 100}`;
-    bucket[b] = (bucket[b] || 0) + 1;
-  }
-  const dayAgo = Date.now() - 86400000;
-  const weekAgo = Date.now() - 7 * 86400000;
-  const parse = s => (s ? new Date(String(s).replace(' ', 'T') + 'Z').getTime() : 0);
+
+  const byDay = db.prepare(
+    `SELECT substr(started_at, 1, 10) AS day, COUNT(*) AS n FROM matches ${matchWhere} GROUP BY day ORDER BY day`,
+  ).all(...params);
+
+  const ratingBuckets = db.prepare(
+    `SELECT (rating / 100) * 100 AS rating, COUNT(*) AS n FROM users
+     WHERE matches_played > 0 GROUP BY rating ORDER BY rating`,
+  ).all();
+
+  const userAgg = db.prepare(
+    `SELECT COUNT(*) AS users,
+            SUM(CASE WHEN created_at    > datetime('now', '-1 day')  THEN 1 ELSE 0 END) AS newUsers24h,
+            SUM(CASE WHEN created_at    > datetime('now', '-7 days') THEN 1 ELSE 0 END) AS newUsers7d,
+            SUM(CASE WHEN last_login_at > datetime('now', '-1 day')  THEN 1 ELSE 0 END) AS activeUsers24h,
+            SUM(CASE WHEN last_login_at > datetime('now', '-7 days') THEN 1 ELSE 0 END) AS activeUsers7d,
+            SUM(disconnects) AS disconnects
+     FROM users`,
+  ).get();
+
   res.json({
     totals: {
-      users: users.length,
-      newUsers24h: users.filter(u => parse(u.created_at) > dayAgo).length,
-      newUsers7d: users.filter(u => parse(u.created_at) > weekAgo).length,
-      activeUsers24h: users.filter(u => parse(u.last_login_at) > dayAgo).length,
-      activeUsers7d: users.filter(u => parse(u.last_login_at) > weekAgo).length,
-      matches: matches.length,
-      draws: matches.filter(m => m.result === 'draw').length,
-      avgDurationSec: durations.length ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length) : 0,
-      medianDurationSec: durations.length ? Math.round(durations[Math.floor(durations.length / 2)]) : 0,
-      disconnects: users.reduce((a, u) => a + (u.disconnects || 0), 0),
+      users: userAgg.users,
+      newUsers24h: userAgg.newUsers24h || 0,
+      newUsers7d: userAgg.newUsers7d || 0,
+      activeUsers24h: userAgg.activeUsers24h || 0,
+      activeUsers7d: userAgg.activeUsers7d || 0,
+      matches: agg.matches,
+      draws: agg.draws || 0,
+      avgDurationSec: Math.round(agg.avgDuration || 0),
+      medianDurationSec: Math.round(median?.d || 0),
+      disconnects: userAgg.disconnects || 0,
     },
     endReasons: reasons,
-    matchesByDay: Object.entries(byDay).sort().map(([day, n]) => ({ day, n })),
-    ratingBuckets: Object.entries(bucket).sort((a, b) => Number(a[0]) - Number(b[0])).map(([r, n]) => ({ rating: Number(r), n })),
+    matchesByDay: byDay,
+    ratingBuckets,
   });
 });
 
 /** ペット分析: 採用率・勝率・出撃・与ダメージ(期間/版で絞り込み) */
 router.get('/stats/pets', (req, res) => {
-  const { sql, params } = rangeFilter(req, 'started_at');
+  const { sql, params } = rangeFilter(req, { column: 'started_at' });
+  const joinedFilter = rangeFilter(req, { column: 'started_at', prefix: 'm' });
   const matches = db.prepare(
-    `SELECT * FROM matches WHERE result IN ('p1','p2','draw')${sql}`,
+    `SELECT id, result, p1_deck_json, p2_deck_json FROM matches WHERE result IN ('p1','p2','draw')${sql}`,
   ).all(...params);
   const ids = new Set(matches.map(m => m.id));
   const stats = {};
@@ -456,8 +482,13 @@ router.get('/stats/pets', (req, res) => {
       if (s.won) bump(petId, 'wins');
     }
   }
-  for (const e of db.prepare("SELECT match_id, type, data_json FROM match_events WHERE type IN ('spawn','damage_summary')").all()) {
-    if (!ids.has(e.match_id)) continue;
+  // 対象試合に紐づくイベントだけを取る(テーブル全体は読まない)
+  const events = ids.size === 0 ? [] : db.prepare(
+    `SELECT e.type, e.data_json FROM match_events e
+     JOIN matches m ON m.id = e.match_id
+     WHERE e.type IN ('spawn','damage_summary') AND m.result IN ('p1','p2','draw')${joinedFilter.sql}`,
+  ).all(...joinedFilter.params);
+  for (const e of events) {
     const d = JSON.parse(e.data_json);
     if (e.type === 'spawn' && d.petId) bump(d.petId, 'spawns', d.count || 1);
     if (e.type === 'damage_summary' && d.petId) {
@@ -512,9 +543,13 @@ router.get('/stats/gacha', (req, res) => {
 /** 売上: IZ課金(期間別・ユーザー別) */
 router.get('/stats/revenue', (req, res) => {
   const { sql, params } = rangeFilter(req, { column: 'created_at', versionColumn: null, prefix: 'p' });
+  // 全件ロードを避けるため上限を設ける(既定5000件・期間で絞り込む前提)
+  const limit = Math.min(Number(req.query.limit) || 5000, 20000);
   const rows = db.prepare(
-    `SELECT p.*, u.name FROM iz_purchases p JOIN users u ON u.id = p.user_id WHERE 1=1${sql} ORDER BY p.created_at DESC`,
-  ).all(...params);
+    `SELECT p.*, u.name FROM iz_purchases p JOIN users u ON u.id = p.user_id WHERE 1=1${sql}
+     ORDER BY p.created_at DESC LIMIT ?`,
+  ).all(...params, limit);
+  const total = db.prepare(`SELECT COUNT(*) AS n FROM iz_purchases p WHERE 1=1${sql}`).get(...params).n;
   const byDay = {};
   const byUser = {};
   for (const r of rows) {
@@ -529,6 +564,8 @@ router.get('/stats/revenue', (req, res) => {
     totalIz: rows.reduce((a, r) => a + r.iz_amount, 0),
     totalCoins: rows.reduce((a, r) => a + r.coins, 0),
     count: rows.length,
+    total, // 期間内の全件数(count が limit で切られている場合の目安)
+    truncated: total > rows.length,
     payers: Object.keys(byUser).length,
     byDay: Object.entries(byDay).sort().map(([day, iz]) => ({ day, iz })),
     byUser: Object.entries(byUser).map(([id, v]) => ({ id: Number(id), ...v })).sort((a, b) => b.iz - a.iz).slice(0, 50),
