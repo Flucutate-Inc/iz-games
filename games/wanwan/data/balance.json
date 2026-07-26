@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "comment": "対戦ルールの数値(design/spec.md §3, §8, §19, §20, §21)。",
+  "match": {
+    "normalTimeSec": 180,
+    "overtimeSec": 60,
+    "tiebreakOrder": ["destroyedLaneHouses", "totalFacilityDamage", "mainHouseHpRatio", "draw"]
+  },
+  "bone": {
+    "max": 10,
+    "start": 4,
+    "regenIntervalSec": 2.5,
+    "overtimeRegenIntervalSec": 1.25
+  },
+  "unitCaps": {
+    "totalPerPlayer": 25,
+    "perLane": 18,
+    "countSquadMembersIndividually": true
+  },
+  "deck": {
+    "ownedPets": 16,
+    "deckSize": 8,
+    "handSize": 4,
+    "noDuplicates": true,
+    "initialHand": {
+      "minLight": 1,
+      "maxHeavy": 2
+    }
+  },
+  "spawnDelayByWeight": {
+    "light": 0.3,
+    "medium": 0.6,
+    "heavy": 1.0
+  },
+  "special": {
+    "id": "oyatsu-time",
+    "name": "おやつタイム",
+    "mode": "laneSelect",
+    "attackSpeedBuff": 0.2,
+    "moveSpeedBuff": 0.2,
+    "durationSec": 6,
+    "gauge": {
+      "required": 100,
+      "perSecond": 1,
+      "perEnemyKillCostMultiplier": 2,
+      "onFacilityDamaged": "small"
+    }
+  }
+}

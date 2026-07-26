@@ -83,6 +83,22 @@
         }
         break;
       }
+      case 'iz:idToken': {
+        var pt = pending[data.requestId];
+        if (pt) {
+          delete pending[data.requestId];
+          pt.resolve(data.idToken || null);
+        }
+        break;
+      }
+      case 'iz:purchase': {
+        var pp = pending[data.requestId];
+        if (pp) {
+          delete pending[data.requestId];
+          pp.resolve({ receipt: data.receipt, coins: data.coins, izAmount: data.izAmount, balance: data.balance });
+        }
+        break;
+      }
       case 'iz:error': {
         var pe = pending[data.requestId];
         if (pe) {
@@ -145,6 +161,22 @@
     /** 距離スコアの共通リーダーボード上位を取得する（[{ rank, displayName, score }, ...]）。 */
     getLeaderboard: function () {
       return request({ type: 'iz:leaderboard' });
+    },
+    /**
+     * Firebase ID トークンを取得する（独自サーバーを持つゲームの本人確認用）。
+     * ゲームのサーバーは署名・aud・iss を検証すること。未対応ホストでは解決しない
+     * (呼び出し側でタイムアウトすること)か iz:error が返る。
+     */
+    getIdToken: function () {
+      return request({ type: 'iz:getIdToken' });
+    },
+    /**
+     * IZ を消費してゲーム内通貨を購入する（独自サーバーを持つゲーム用）。
+     * 解決値は { receipt, coins, izAmount, balance }。receipt はゲームサーバーで
+     * 署名検証してから通貨を付与すること（ゲーム側では IZ を増やせない）。
+     */
+    purchase: function (izAmount) {
+      return request({ type: 'iz:purchase', izAmount: Math.max(1, Math.floor(Number(izAmount) || 0)) });
     },
   };
 

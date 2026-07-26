@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "comment": "施設仕様(design/spec.md §11)。メインハウスは自軍レーンハウスがどちらか破壊されるまで攻撃を開始しない。",
+  "facilities": [
+    {
+      "id": "lane-house",
+      "name": "わんこハウス",
+      "hp": 8000,
+      "attackPower": 180,
+      "attackRange": 230,
+      "attackInterval": 1.2,
+      "target": "nearestEnemy",
+      "point": 1,
+      "subject": "a cute wooden dog house fortress with a bone emblem above the round door, small watchtower on the roof"
+    },
+    {
+      "id": "main-house",
+      "name": "メインハウス",
+      "hp": 12000,
+      "attackPower": 250,
+      "attackRange": 250,
+      "attackInterval": 1.0,
+      "target": "nearestEnemy",
+      "attackCondition": "ownLaneHouseDestroyed",
+      "point": "win",
+      "subject": "a grand two-story dog castle keep with a big bone emblem, flags on twin towers, and a round gate"
+    }
+  ],
+  "teamColors": {
+    "comment": "生成は青チーム基準。赤チームは tools/generate-assets.js が色相回転で自動生成する。",
+    "ally": "blue",
+    "enemy": "red"
+  }
+}

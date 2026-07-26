@@ -22,6 +22,8 @@
 | `iz:ranking`     | `{ requestId, entries:[{rank,displayName,net}] }`                            | 取得金額ランキング（賭けゲーム）    |
 | `iz:scoreAck`    | `{ requestId, best, isBest }`                                                 | 距離スコア送信の結果（自己ベスト）  |
 | `iz:leaderboard` | `{ requestId, entries:[{rank,displayName,score}] }`                          | 距離スコアの共通リーダーボード      |
+| `iz:idToken`     | `{ requestId, idToken }`                                                      | Firebase ID トークン（独自サーバー認証用） |
+| `iz:purchase`    | `{ requestId, receipt, coins, izAmount, balance }`                            | ゲーム内通貨の購入結果（署名済みレシート） |
 | `iz:error`       | `{ requestId, code, message }`                                                | リクエスト失敗                      |
 
 ### ゲーム → ホスト
@@ -33,6 +35,28 @@
 | `iz:ranking`     | `{ requestId }`                     | 取得金額ランキング取得依頼   |
 | `iz:submitScore` | `{ requestId, score }`              | 距離スコア送信（`score` は0以上の整数。IZは動かさない） |
 | `iz:leaderboard` | `{ requestId }`                     | 共通リーダーボード取得依頼   |
+| `iz:getIdToken`  | `{ requestId }`                     | Firebase ID トークン取得依頼（下記参照） |
+| `iz:purchase`    | `{ requestId, izAmount }`           | IZ を消費してゲーム内通貨を購入（下記参照） |
+
+### `iz:getIdToken` について
+
+独自のゲームサーバーを持つゲーム（例: `games/wanwan/`）が、IZ アカウントで自動ログイン
+するための本人確認に使う。ホストは `firebase/auth` の `getIdToken()` の結果を返す。
+
+- ゲームサーバーは受け取ったトークンの **署名・`aud`（プロジェクトID）・`iss`・`exp` を必ず検証**する
+  こと。`iz:init` の `user.uid` は表示用であり、認証には使ってはならない（偽装可能）。
+- 未対応の旧ホストでは応答が返らないため、ゲーム側はタイムアウトして通常ログインへ
+  フォールバックすること。
+
+### `iz:purchase` について
+
+IZ を消費してゲーム内通貨を購入する。**IZ の残高移動はホスト側の
+`purchaseGameCurrency` Cloud Function だけが行い**、ゲームには HMAC 署名済みの
+レシートが返る。ゲームサーバーは共有シークレットで署名を検証し、`nonce` で
+二重付与を防いだうえで通貨を付与すること。
+
+- ゲームは IZ を増やせない（レシートを偽造できない）という不変条件を維持する。
+- 購入対象のゲームは iz-app 側 `game-registry.ts` に `currencyPurchase` を登録する必要がある。
 
 ## セキュリティ（重要）
 
