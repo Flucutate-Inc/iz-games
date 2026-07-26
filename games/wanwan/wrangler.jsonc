@@ -1,0 +1,40 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "wanwan",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-01-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // ゲーム本体・管理画面・素材・SDK は静的アセットとして配信する(Workerを起動しないので無料枠を消費しない)
+  "assets": {
+    "directory": "worker/public",
+    "binding": "ASSETS"
+  },
+
+  // 対戦ルームはメモリ上、SQLiteは単一。DOは "main" の1個だけ使う
+  "durable_objects": {
+    "bindings": [{ "name": "GAME_SERVER", "class_name": "GameServer" }]
+  },
+  // 無料プランで使えるのは SQLite バックエンドの Durable Object
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["GameServer"] }],
+
+  // サーバー側コードを無改修で動かすための差し替え
+  "alias": {
+    "better-sqlite3": "./worker/sql-do.js",
+    "express": "./worker/express-shim.js",
+    "fs": "./worker/fs-shim.js"
+  },
+
+  // CommonJS の __dirname はバンドル後に存在しない。
+  // Workers ではファイルパスに意味がない(fs-shim がファイル名で判定する)ため定数で潰す。
+  "define": {
+    "__dirname": "\"/\"",
+    "__filename": "\"/index.js\""
+  },
+
+  "vars": {
+    "FIREBASE_PROJECT": "iz-app-6e1d5"
+  },
+
+  "observability": { "enabled": true }
+}

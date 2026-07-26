@@ -4,7 +4,7 @@ const http = require('http');
 const express = require('express');
 const { WebSocketServer } = require('ws');
 
-require('./db'); // スキーマ+シード
+require('./db').init(); // スキーマ+マイグレーション+シード
 const api = require('./api');
 const admin = require('./admin');
 const balance = require('./balance');

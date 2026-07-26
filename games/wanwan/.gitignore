@@ -1,6 +1,11 @@
 # 素材生成ツール・サーバーの依存
 tools/node_modules/
 server/node_modules/
+node_modules/
+
+# Cloudflare Workers: 生成物とローカル状態
+worker/public/
+.wrangler/
 
 # ローカルDB(SQLite)
 server/*.db*

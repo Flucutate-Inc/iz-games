@@ -38,6 +38,7 @@ function makeEntry(user, ws) {
 }
 
 function joinQueue(user, ws) {
+  startPump();
   if (userRoom.has(user.id)) return { error: '対戦中です' };
   if (queue.some(e => e.userId === user.id)) return { error: 'すでにマッチング中です' };
   const entry = makeEntry(user, ws);
@@ -80,7 +81,17 @@ function pump() {
     }
   }
 }
-setInterval(pump, 1000).unref();
+/**
+ * キュー監視の開始(1秒ごと)。
+ * Cloudflare Workers はモジュール読み込み時(グローバルスコープ)でのタイマー設定を禁止しているため、
+ * 最初にキュー操作が行われたときに遅延起動する。Node ではプロセス終了を妨げないよう unref する。
+ */
+let pumpTimer = null;
+function startPump() {
+  if (pumpTimer) return;
+  pumpTimer = setInterval(pump, 1000);
+  if (pumpTimer && typeof pumpTimer.unref === 'function') pumpTimer.unref();
+}
 
 function createRoomCode(user, ws) {
   if (userRoom.has(user.id)) return { error: '対戦中です' };
@@ -170,5 +181,5 @@ function roomCodeInfo() {
 
 module.exports = {
   joinQueue, leaveQueue, createRoomCode, joinRoomCode, startPractice, roomOf,
-  activeRooms, queueInfo, roomCodeInfo,
+  activeRooms, queueInfo, roomCodeInfo, startPump,
 };

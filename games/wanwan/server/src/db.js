@@ -2,6 +2,11 @@
  * SQLite スキーマとシード。
  * バランス値は balance_versions のスナップショット(不変JSON)にのみ存在し、
  * コードへの直書きは禁止(design/spec.md §0)。
+ *
+ * スキーマ作成・マイグレーション・シードは init() にまとめてある。
+ * Cloudflare Workers(Durable Objects)では SQLite ハンドルが DO 生成後にしか
+ * 存在しないため、読み込み時ではなく DO 側から明示的に init() を呼ぶ。
+ * Node では index.js / テストが起動時に呼ぶ。
  */
 const Database = require('better-sqlite3');
 const fs = require('fs');
@@ -9,10 +14,8 @@ const path = require('path');
 
 const DB_PATH = process.env.WANWAN_DB || path.join(__dirname, '..', 'wanwan.db');
 const db = new Database(DB_PATH);
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
 
-db.exec(`
+const SCHEMA = `
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY,
   name TEXT NOT NULL UNIQUE,
@@ -115,21 +118,19 @@ CREATE TABLE IF NOT EXISTS audit_log (
   reason TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
-`);
+`;
 
-// マイグレーション: IZ(Firebase)アカウント連携用の列
-{
-  const cols = db.prepare('PRAGMA table_info(users)').all();
-  if (!cols.some(c => c.name === 'firebase_uid')) {
+/** 列の追加(既に存在する場合は何もしない) */
+function migrateColumns() {
+  // IZ(Firebase)アカウント連携用の列
+  const userCols = db.prepare('PRAGMA table_info(users)').all();
+  if (!userCols.some(c => c.name === 'firebase_uid')) {
     db.exec('ALTER TABLE users ADD COLUMN firebase_uid TEXT');
     db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_firebase_uid ON users(firebase_uid)');
   }
-}
-
-// マイグレーション: 公開予約(scheduled)の実行時刻
-{
-  const cols = db.prepare('PRAGMA table_info(balance_versions)').all();
-  if (!cols.some(c => c.name === 'scheduled_at')) {
+  // 公開予約(scheduled)の実行時刻
+  const versionCols = db.prepare('PRAGMA table_info(balance_versions)').all();
+  if (!versionCols.some(c => c.name === 'scheduled_at')) {
     db.exec('ALTER TABLE balance_versions ADD COLUMN scheduled_at TEXT');
   }
 }
@@ -149,7 +150,6 @@ function seedBalance() {
   ).run(snapshot);
   console.log('[db] 初期バランス版をシードしました');
 }
-seedBalance();
 
 /**
  * マイグレーション: 既存のバランス版を現行スキーマへ寄せる(冪等)。
@@ -189,6 +189,22 @@ function migrateGacha() {
   tx();
   if (migrated > 0) console.log(`[db] ${migrated}件のバランス版をガチャ対応へ移行しました`);
 }
-migrateGacha();
+/**
+ * スキーマ作成・マイグレーション・初期シードを行う(冪等)。
+ * Node は index.js/テストから、Workers は Durable Object の生成時に呼ぶ。
+ */
+let initialized = false;
+function init() {
+  if (initialized) return db;
+  db.pragma('journal_mode = WAL');
+  db.pragma('foreign_keys = ON');
+  db.exec(SCHEMA);
+  migrateColumns();
+  seedBalance();
+  migrateGacha();
+  initialized = true;
+  return db;
+}
 
 module.exports = db;
+module.exports.init = init;

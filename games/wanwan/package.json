@@ -1,0 +1,14 @@
+{
+  "name": "wanwan-worker",
+  "private": true,
+  "description": "わんわん大戦争 Cloudflare Workers + Durable Objects 版",
+  "scripts": {
+    "build": "bash worker/build-assets.sh",
+    "dev": "npm run build && wrangler dev --local --port 8788",
+    "deploy": "npm run build && wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "wrangler": "^4.114.0"
+  }
+}

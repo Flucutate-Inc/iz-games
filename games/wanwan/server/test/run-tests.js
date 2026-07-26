@@ -6,6 +6,7 @@ for (const f of ['test.db', 'test.db-wal', 'test.db-shm']) {
 }
 
 const assert = require('assert');
+require('../src/db').init(); // スキーマ+シード(Workers では DO 側で呼ぶ)
 const engine = require('../src/engine');
 const snapshot = JSON.parse(fs.readFileSync(require('path').join(__dirname, '..', '..', 'data', 'balance-initial.json'), 'utf8'));
 

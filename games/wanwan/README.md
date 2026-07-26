@@ -5,9 +5,10 @@
 
 - **サーバー権威型**: 戦闘計算・勝敗・報酬はすべてサーバーが確定。クライアントは操作要求のみ送信。
 - **データ駆動**: バランス値はコードに直書きせず、管理画面からバージョン単位で編集・テスト・公開・ロールバック。
-- ゲームは静的バンドルではなく Node サーバーを持つため、**GitHub Pages では配信できない**。
-  Cloud Run へデプロイする(手順: [deploy/README.md](deploy/README.md))。デプロイ後、その URL を
-  リポジトリ直下の `games.json` に登録するとIZアプリのゲーム一覧に出る。
+- ゲームは静的バンドルではなくサーバーを持つため、**GitHub Pages では配信できない**。
+  既定のデプロイ先は **Cloudflare Workers + Durable Objects(無料枠で動く)**。
+  Google Cloud Run 用の資材も用意してある(手順: [deploy/README.md](deploy/README.md))。
+  デプロイ後、その URL をリポジトリ直下の `games.json` に登録するとIZアプリのゲーム一覧に出る。
 
 ## 起動方法
 
@@ -33,10 +34,30 @@ npm run test:e2e      # 受入基準E2E(30件): ACC/DECK/MATCH/BATTLE/HAND/NET/A
 ADMIN_NAME=<管理者名> ADMIN_PASS=<パスワード> npm run test:admin   # 管理画面E2E(44件)
 ```
 
+## 実行環境
+
+同じ `server/src` のコードが、Node でも Cloudflare Workers でも動く。
+
+| | Node(ローカル開発) | Cloudflare Workers + Durable Objects(本番) |
+|---|---|---|
+| 起動 | `cd server && npm start` | `npm run dev` / `npm run deploy` |
+| SQLite | better-sqlite3(ファイル) | Durable Object の SQLite |
+| HTTP | express | `worker/express-shim.js`(最小互換) |
+| WebSocket | ws | `WebSocketPair` |
+| 20Hzループ | setInterval | setInterval(DOが生きている間) |
+
+差し替えは `wrangler.jsonc` の `alias` で行うため、**サーバー側のコードは環境を意識しない**。
+
 ## 構成
 
 ```
 games/wanwan/
+├── worker/                      Cloudflare Workers 版(エントリ + 互換シム)
+│   ├── index.js                 Worker + Durable Object(GameServer)
+│   ├── sql-do.js                DO SQLite を better-sqlite3 API で使う
+│   ├── express-shim.js          express の最小互換
+│   └── fs-shim.js               初期バランスJSONの読み出し
+├── wrangler.jsonc               Workers の設定(alias / DO / アセット)
 ├── design/
 │   ├── spec.md                  実装仕様書 v2(正)
 │   ├── development-request.txt  開発依頼書(原文抽出)
