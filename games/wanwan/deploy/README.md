@@ -34,6 +34,36 @@ gcloud auth login          # 組織のセッション制御で定期的に失効
 初回は API 有効化・Artifact Registry・GCS バケット・実行サービスアカウントの作成まで行う。
 2回目以降は同じコマンドでビルドと差し替えのみ。
 
+### 初回だけ必要な権限付与(スクリプトには含めていない)
+
+Cloud Build から Cloud Run へデプロイするには、ビルド実行SAに権限が要る。
+プロジェクトの設定によってビルドSAは2種類ありうるので、使われている方に付与する。
+
+```bash
+PROJECT=iz-app-6e1d5
+NUM=$(gcloud projects describe $PROJECT --format='value(projectNumber)')
+BUILD_SA=$NUM@cloudbuild.gserviceaccount.com      # 新しめのプロジェクトでは $NUM-compute@developer.gserviceaccount.com
+
+# Cloud Run へデプロイする権限
+gcloud projects add-iam-policy-binding $PROJECT \
+  --member=serviceAccount:$BUILD_SA --role=roles/run.admin --condition=None
+
+# 実行SAとしてデプロイするために必要
+gcloud iam service-accounts add-iam-policy-binding wanwan-run@$PROJECT.iam.gserviceaccount.com \
+  --member=serviceAccount:$BUILD_SA --role=roles/iam.serviceAccountUser --project $PROJECT
+```
+
+`--allow-unauthenticated` が組織ポリシー(`constraints/iam.allowedPolicyMemberDomains`)で
+弾かれる場合は、ドメイン制限の例外設定が必要。設定できない場合は Cloud Run を非公開のままにして
+IAP か Firebase Hosting のリライト経由で公開する構成に変更すること。
+
+### 費用の目安
+
+`--min-instances=1 --no-cpu-throttling`(常時起動・CPU常時割り当て)は
+1 vCPU / 1GiB で **月あたり US$20〜30 程度**かかる。戦闘ループが常時動く設計のため
+最小構成でもアイドル課金は避けられない。下げたい場合は `cloudbuild.yaml` の
+`--cpu=0.5 --memory=512Mi` へ変更する(同時対戦数が少ないうちは十分)。
+
 | 環境変数 | 既定 | 用途 |
 |---|---|---|
 | `PORT` | 8080 | Cloud Run が渡す |
