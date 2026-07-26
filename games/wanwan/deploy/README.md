@@ -16,6 +16,23 @@
 
 # A. Cloudflare Workers + Durable Objects(既定・無料)
 
+**稼働中**: https://wanwan.naggigoishi.workers.dev
+
+## 永続性(何がどこまで残るか)
+
+| 層 | 仕組み | 消えないか |
+|---|---|---|
+| データ | Durable Object の SQLite。Cloudflare 側で永続化・複製される | **残る**。再デプロイでも消えない(litestream のような自前複製は不要) |
+| バックアップ | `GET /api/admin/backup`(管理者のみ)で全テーブルをJSON出力。`deploy/backup.sh` で世代管理つき保存 | 誤操作・誤公開からの復旧用。cron で日次実行できる |
+| デプロイ認証 | `wrangler login` の資格情報は `~/.config/.wrangler/config/default.toml` に保存され、**refresh_token で自動更新**される | 再ログイン不要。端末を変える場合は再ログインか、下記のCI経由 |
+| デプロイ経路 | `.github/workflows/deploy-wanwan.yml`(手動実行)。リポジトリSecretの `CLOUDFLARE_API_TOKEN` を使う | **ローカル環境に依存しない**恒久経路 |
+| URL | `*.workers.dev` のサブドメインは固定 | 変わらない。独自ドメインを当てる場合は Cloudflare の Custom Domain |
+
+```bash
+# 日次バックアップの例(cron)
+0 4 * * * ADMIN_NAME=<管理者> ADMIN_PASS=<パスワード> /home/naggi/projects/iz-games/games/wanwan/deploy/backup.sh
+```
+
 ## 構成
 
 ```

@@ -1,0 +1,54 @@
+# わんわん大戦争を Cloudflare Workers へデプロイする。
+#
+# ローカルの `wrangler login` に依存せずデプロイできるようにするためのワークフロー。
+# 事前にリポジトリの Secrets へ CLOUDFLARE_API_TOKEN を登録すること
+# (Cloudflare ダッシュボード → My Profile → API Tokens → テンプレート
+#  「Edit Cloudflare Workers」。IP制限は付けない)。
+#
+# 既定では手動実行のみ。main への push で自動デプロイしたい場合は
+# 下の push トリガーのコメントを外す。
+name: deploy wanwan
+
+on:
+  workflow_dispatch:
+  # push:
+  #   branches: [main]
+  #   paths:
+  #     - 'games/wanwan/**'
+  #     - 'sdk/**'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: games/wanwan
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: サーバーのユニットテスト
+        working-directory: games/wanwan/server
+        run: |
+          npm ci
+          npm test
+
+      - name: 依存の取得
+        run: npm ci
+
+      - name: アセット収集 + デプロイ
+        run: npm run deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+      - name: ヘルスチェック
+        run: |
+          for i in $(seq 1 10); do
+            if curl -fsS https://wanwan.naggigoishi.workers.dev/healthz; then exit 0; fi
+            sleep 5
+          done
+          echo "ヘルスチェックに失敗しました" >&2
+          exit 1

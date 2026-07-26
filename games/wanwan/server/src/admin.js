@@ -573,6 +573,32 @@ router.get('/stats/revenue', (req, res) => {
   });
 });
 
+/**
+ * バックアップ: 全テーブルをJSONで書き出す(セッションは除く)。
+ * Durable Object の SQLite は Cloudflare 側で永続化されるが、
+ * 論理的な事故(誤操作・誤ったバランス公開)に備えて手元へ保管できるようにする。
+ * 対戦イベントは件数が多いので既定では含めない(?includeEvents=1 で含む)。
+ */
+router.get('/backup', (req, res) => {
+  const dump = table => db.prepare(`SELECT * FROM ${table}`).all();
+  const out = {
+    exportedAt: new Date().toISOString(),
+    schemaVersion: 1,
+    publishedVersionId: balance.getPublished().id,
+    users: dump('users'),
+    user_pets: dump('user_pets'),
+    decks: dump('decks'),
+    balance_versions: dump('balance_versions'),
+    matches: dump('matches'),
+    gacha_pulls: dump('gacha_pulls'),
+    iz_purchases: dump('iz_purchases'),
+    audit_log: dump('audit_log'),
+  };
+  if (req.query.includeEvents === '1') out.match_events = dump('match_events');
+  res.setHeader('Content-Disposition', `attachment; filename="wanwan-backup-${out.exportedAt.slice(0, 10)}.json"`);
+  res.json(out);
+});
+
 /** 稼働状況: 進行中の試合・マッチング待機・接続数 */
 router.get('/live', (req, res) => {
   const rooms = [...mm.activeRooms.values()].map(r => ({
