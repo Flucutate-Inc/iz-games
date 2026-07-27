@@ -642,24 +642,35 @@ console.log('admin bootstrap tests:');
   // 鍵の入れ替え中は「IZ側は新鍵・ゲーム側は旧鍵」の隙間でIZだけ減る事故が起きるため、
   // 切り替え中は新旧どちらの署名も受け付けられるようにしてある
   await atest('鍵の入れ替え中は新旧どちらの署名も受理する', () => {
-    process.env.WANWAN_RECEIPT_SECRET = 'new-secret';
-    process.env.WANWAN_RECEIPT_SECRET_OLD = 'test-secret';
-    delete require.cache[require.resolve('../src/receipt')];
-    const rotating = require('../src/receipt');
+    // 途中で失敗しても後続テストへ影響しないよう、環境変数とモジュールキャッシュは
+    // finally で必ず元に戻す
+    const savedCurrent = process.env.WANWAN_RECEIPT_SECRET;
+    const savedOld = process.env.WANWAN_RECEIPT_SECRET_OLD;
+    const restoreEnv = (key, value) => {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    };
+    try {
+      process.env.WANWAN_RECEIPT_SECRET = 'new-secret';
+      process.env.WANWAN_RECEIPT_SECRET_OLD = 'test-secret';
+      delete require.cache[require.resolve('../src/receipt')];
+      const rotating = require('../src/receipt');
 
-    assert.equal(rotating.verifyReceipt(sign(goodReceipt, 'new-secret')).coins, 100, '新鍵');
-    assert.equal(rotating.verifyReceipt(sign(goodReceipt, 'test-secret')).coins, 100, '旧鍵');
-    rejectsSync(() => rotating.verifyReceipt(sign(goodReceipt, 'unrelated-secret')));
+      assert.equal(rotating.verifyReceipt(sign(goodReceipt, 'new-secret')).coins, 100, '新鍵');
+      assert.equal(rotating.verifyReceipt(sign(goodReceipt, 'test-secret')).coins, 100, '旧鍵');
+      rejectsSync(() => rotating.verifyReceipt(sign(goodReceipt, 'unrelated-secret')));
 
-    // 旧鍵を外すと旧鍵の署名は通らなくなる(入れ替え完了後)
-    delete process.env.WANWAN_RECEIPT_SECRET_OLD;
-    delete require.cache[require.resolve('../src/receipt')];
-    const rotated = require('../src/receipt');
-    assert.equal(rotated.verifyReceipt(sign(goodReceipt, 'new-secret')).coins, 100);
-    rejectsSync(() => rotated.verifyReceipt(sign(goodReceipt, 'test-secret')));
-
-    process.env.WANWAN_RECEIPT_SECRET = 'test-secret';
-    delete require.cache[require.resolve('../src/receipt')];
+      // 旧鍵を外すと旧鍵の署名は通らなくなる(入れ替え完了後)
+      delete process.env.WANWAN_RECEIPT_SECRET_OLD;
+      delete require.cache[require.resolve('../src/receipt')];
+      const rotated = require('../src/receipt');
+      assert.equal(rotated.verifyReceipt(sign(goodReceipt, 'new-secret')).coins, 100);
+      rejectsSync(() => rotated.verifyReceipt(sign(goodReceipt, 'test-secret')));
+    } finally {
+      restoreEnv('WANWAN_RECEIPT_SECRET', savedCurrent);
+      restoreEnv('WANWAN_RECEIPT_SECRET_OLD', savedOld);
+      delete require.cache[require.resolve('../src/receipt')];
+    }
   });
 
   console.log(`\n${passed} tests passed${process.exitCode ? ' (with failures)' : ''}`);
