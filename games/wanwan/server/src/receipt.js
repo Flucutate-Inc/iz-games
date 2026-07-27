@@ -6,7 +6,18 @@
  */
 const crypto = require('crypto');
 
+/**
+ * 検証に使う鍵。
+ * 鍵の入れ替え中は「IZ側は新しい鍵で署名したのに、ゲーム側はまだ旧鍵」という
+ * 隙間が生まれ、その間のレシートは検証に失敗する。IZは先に減っているため
+ * ユーザーが損をする。これを避けるため、旧鍵(WANWAN_RECEIPT_SECRET_OLD)を
+ * 併用できるようにして、切り替え中はどちらの署名も受け付ける。
+ *
+ * 手順: ①ゲーム側に新旧2本を設定 → ②IZ側を新鍵へ切替 → ③旧鍵を削除
+ */
 const SECRET = process.env.WANWAN_RECEIPT_SECRET || '';
+const OLD_SECRET = process.env.WANWAN_RECEIPT_SECRET_OLD || '';
+const SECRETS = [SECRET, OLD_SECRET].filter(Boolean);
 const MAX_AGE_MS = 10 * 60 * 1000; // レシートの有効期間
 
 function canonical(r) {
@@ -15,7 +26,7 @@ function canonical(r) {
 
 /** 検証に成功したらレシート本文、失敗したら理由つきで throw */
 function verifyReceipt(token, { gameId = 'wanwan', now = Date.now() } = {}) {
-  if (!SECRET) throw new Error('WANWAN_RECEIPT_SECRET が未設定です(IZ課金は無効)');
+  if (SECRETS.length === 0) throw new Error('WANWAN_RECEIPT_SECRET が未設定です(IZ課金は無効)');
   if (typeof token !== 'string') throw new Error('レシートが不正です');
   const parts = token.split('.');
   if (parts.length !== 2) throw new Error('レシートの形式が不正です');
@@ -35,14 +46,17 @@ function verifyReceipt(token, { gameId = 'wanwan', now = Date.now() } = {}) {
   ) {
     throw new Error('レシートの内容が不正です');
   }
-  const expected = crypto.createHmac('sha256', SECRET).update(canonical(receipt)).digest('base64url');
-  const a = Buffer.from(parts[1]);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) throw new Error('レシートの署名が不正です');
+  // 現行鍵と(あれば)旧鍵のどちらかで一致すれば通す。比較は常にタイミング安全に行う
+  const given = Buffer.from(parts[1]);
+  const matched = SECRETS.some(secret => {
+    const expected = Buffer.from(crypto.createHmac('sha256', secret).update(canonical(receipt)).digest('base64url'));
+    return given.length === expected.length && crypto.timingSafeEqual(given, expected);
+  });
+  if (!matched) throw new Error('レシートの署名が不正です');
   if (receipt.gameId !== gameId) throw new Error('別のゲームのレシートです');
   if (receipt.coins <= 0) throw new Error('付与額が不正です');
   if (now - receipt.issuedAt > MAX_AGE_MS) throw new Error('レシートの有効期限が切れています');
   return receipt;
 }
 
-module.exports = { verifyReceipt, isEnabled: () => !!SECRET };
+module.exports = { verifyReceipt, isEnabled: () => SECRETS.length > 0 };
