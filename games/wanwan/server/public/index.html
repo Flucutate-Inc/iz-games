@@ -13,6 +13,9 @@
 <section id="screen-auth" class="screen">
   <div class="auth-box">
     <img class="title-logo" src="/assets/ui/title-logo.png" alt="わんわん大戦争">
+    <!-- IZアプリ内で自動ログインに失敗したときだけ、理由と再試行を出す -->
+    <div class="card iz-note hidden" id="iz-login-note"></div>
+
     <div class="card">
       <div class="tabs">
         <button id="tab-login" class="tab active">ログイン</button>

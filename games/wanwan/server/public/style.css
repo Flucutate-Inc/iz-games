@@ -232,6 +232,9 @@ label { display: flex; flex-direction: column; gap: var(--s1); font-size: var(--
   border-radius: var(--r-md); cursor: pointer; font-family: inherit; font-size: var(--t-body);
 }
 .tab.active { background: linear-gradient(180deg, var(--accent) 0%, var(--accent-2) 100%); color: var(--accent-ink); font-weight: 700; border-color: transparent; }
+/* IZ自動ログイン失敗時の説明 */
+.iz-note { border-color: var(--accent); }
+.iz-note b { color: var(--accent); }
 #screen-auth label { margin-bottom: var(--s3); }
 #auth-submit { width: 100%; margin-top: var(--s2); }
 

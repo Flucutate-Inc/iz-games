@@ -689,36 +689,114 @@
   // ─── 起動 ───────────────────────────────────────────────────
   const withTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
 
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const izEmbedded = () => !!window.ReactNativeWebView || window.parent !== window;
+
   /**
    * IZ アプリ内(WebView/iframe)で開かれた場合の自動ログイン。
    * ホストから Firebase ID トークンを受け取り、サーバーで署名検証する。
-   * 未対応ホスト・タイムアウト時は false を返して通常ログインへフォールバック。
+   *
+   * ホスト側は起動直後だと Firebase の認証復元が終わっていないことがあり、
+   * 1回きり・3秒で諦めるとログイン画面へ落ちてしまう。待ち時間を伸ばし、
+   * 数回リトライし、失敗したら理由を返して画面に出す(黙って落とさない)。
    */
-  async function tryIzAutoLogin() {
-    const embedded = !!window.ReactNativeWebView || window.parent !== window;
-    if (!embedded || !window.IZ) return false;
+  async function tryIzAutoLogin(onStatus = () => {}) {
+    if (!izEmbedded()) return { ok: false, reason: 'IZアプリ内ではありません' };
+    if (!window.IZ) return { ok: false, reason: 'IZ SDK を読み込めませんでした' };
+
+    let init;
     try {
-      const init = await withTimeout(IZ.ready(), 3000);
-      const idToken = await withTimeout(IZ.getIdToken(), 3000);
-      if (!idToken) return false;
-      const res = await Net.api('/login-iz', { body: { idToken, displayName: init.user && init.user.displayName } });
-      Net.setToken(res.token);
-      me = res.user;
-      return true;
+      onStatus('IZアプリと接続しています…');
+      init = await withTimeout(IZ.ready(), 8000);
     } catch {
-      return false;
+      return { ok: false, reason: 'IZアプリからの応答がありません', hint: 'update' };
     }
+
+    let lastError = '';
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        onStatus(attempt === 1 ? 'IZアカウントを確認しています…' : `IZアカウントを確認しています…(${attempt}/3)`);
+        const idToken = await withTimeout(IZ.getIdToken(), 6000);
+        if (!idToken) throw new Error('IZアカウントの情報を取得できませんでした');
+        onStatus('ログインしています…');
+        const res = await Net.api('/login-iz', { body: { idToken, displayName: init.user && init.user.displayName } });
+        Net.setToken(res.token);
+        me = res.user;
+        return { ok: true };
+      } catch (e) {
+        lastError = e && e.message === 'timeout' ? 'IZアプリが応答しませんでした' : (e && e.message) || '不明なエラー';
+        console.warn(`[IZ自動ログイン] ${attempt}回目失敗: ${lastError}`);
+        if (attempt < 3) await sleep(1000 * attempt);
+      }
+    }
+    // 3回とも応答が無い = ホストがゲーム連携(iz:getIdToken)に未対応の可能性が高い
+    return { ok: false, reason: lastError, hint: /応答/.test(lastError) ? 'update' : '' };
+  }
+
+  /** IZ内で自動ログインできなかったときに、理由と再試行をログイン画面に出す */
+  function showIzFallback(result) {
+    const box = $('iz-login-note');
+    if (!box) return;
+    box.classList.remove('hidden');
+    box.innerHTML = `
+      <p><b>IZアカウントで自動ログインできませんでした</b></p>
+      <p class="terms">理由: ${esc(result.reason || '不明')}${
+        result.hint === 'update' ? '<br>IZアプリが最新版か確認してください(ゲーム連携に対応したバージョンが必要です)。' : ''
+      }</p>
+      <button class="btn primary" id="btn-iz-retry" style="width:100%;margin-top:8px">IZアカウントで再試行</button>
+      <p class="terms">うまくいかない場合は、下の表示名とパスワードでも遊べます。</p>`;
+    $('btn-iz-retry').onclick = async () => {
+      $('btn-iz-retry').disabled = true;
+      $('matching-status').textContent = 'IZアカウントでログイン中…';
+      show('matching');
+      const retry = await tryIzAutoLogin(t => { $('matching-status').textContent = t; });
+      if (retry.ok) {
+        await nav('home');
+        Net.connectWS();
+      } else {
+        show('auth');
+        showIzFallback(retry);
+      }
+    };
   }
 
   (async () => {
+    // 既にこのゲームのセッションがあるなら、それで入る(IZ内でも通信を減らす)
+    if (Net.token && !izEmbedded()) {
+      try {
+        await nav('home');
+        Net.connectWS();
+        return;
+      } catch {
+        Net.setToken(null);
+      }
+    }
+
     // IZ アプリ内では IZ アカウントを優先(アプリ側のアカウント切替に追従)
-    $('matching-status').textContent = 'IZアカウントでログイン中…';
-    show('matching');
-    if (await tryIzAutoLogin()) {
-      await nav('home');
-      Net.connectWS();
+    if (izEmbedded()) {
+      $('matching-status').textContent = 'IZアカウントでログイン中…';
+      show('matching');
+      const result = await tryIzAutoLogin(t => { $('matching-status').textContent = t; });
+      if (result.ok) {
+        await nav('home');
+        Net.connectWS();
+        return;
+      }
+      // 自動ログインに失敗しても、以前のセッションが残っていればそれで入る
+      if (Net.token) {
+        try {
+          await nav('home');
+          Net.connectWS();
+          return;
+        } catch {
+          Net.setToken(null);
+        }
+      }
+      show('auth');
+      showIzFallback(result);
       return;
     }
+
     if (Net.token) {
       try {
         await nav('home');
