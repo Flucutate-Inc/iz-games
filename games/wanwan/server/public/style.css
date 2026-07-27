@@ -434,16 +434,18 @@ label { display: flex; flex-direction: column; gap: var(--s1); font-size: var(--
     linear-gradient(180deg, #221a3d 0%, #14102a 100%);
   overflow: hidden;
 }
+/*
+ * 背景画像(WebP 29KB)。無ければコードで描いた svg が下敷きになる。
+ * 中央はUIが乗るので暗く落とすが、mask 合成は描画コストが高く端末によっては
+ * 重くなるため、単純なグラデーションを上に重ねて同じ見た目を作る。
+ */
 .gacha-screen::before {
   content: ''; position: absolute; inset: 0; z-index: 0; pointer-events: none;
-  /* 生成画像(png)が無い場合はコードで描いた svg が下敷きとして見える */
   background:
-    url('/assets/background/gacha-bg.png') center / cover no-repeat,
+    /* 中央を落とすスクリム(手前) */
+    radial-gradient(74% 46% at 50% 44%, rgba(18, 14, 38, 0.94) 0%, rgba(18, 14, 38, 0.82) 42%, rgba(18, 14, 38, 0.25) 72%, rgba(18, 14, 38, 0.1) 100%),
+    url('/assets/background/gacha-bg.webp') center / cover no-repeat,
     url('/assets/background/gacha-bg.svg') center / cover no-repeat;
-  /* 中央のUIを読みやすくするため、周辺だけ見せて中央は落とす */
-  -webkit-mask-image: radial-gradient(70% 45% at 50% 45%, transparent 35%, #000 78%);
-  mask-image: radial-gradient(70% 45% at 50% 45%, transparent 35%, #000 78%);
-  opacity: 0.55;
 }
 .gacha-screen > * { position: relative; z-index: 1; }
 
