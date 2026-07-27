@@ -580,6 +580,32 @@ console.log('admin bootstrap tests:');
   await atest('期限切れを拒否', () => rejects(verifyIdToken(makeToken({ ...good, exp: now - 10 }), opts)));
   await atest('sub 欠落を拒否', () => rejects(verifyIdToken(makeToken({ ...good, sub: '' }), opts)));
 
+  // 本番とステージングの両方のアプリから遊べるよう、受け入れプロジェクトは複数指定できる
+  await atest('FIREBASE_PROJECT を複数指定すると両方受理する', async () => {
+    process.env.FIREBASE_PROJECT = 'iz-app-6e1d5, iz-app-staging';
+    delete require.cache[require.resolve('../src/firebase-auth')];
+    const multi = require('../src/firebase-auth');
+    assert.deepEqual(multi.ALLOWED_PROJECTS, ['iz-app-6e1d5', 'iz-app-staging']);
+
+    const forProject = p => ({
+      aud: p, iss: `https://securetoken.google.com/${p}`, exp: now + 3600, iat: now, sub: 'uid1',
+    });
+    assert.equal((await multi.verifyIdToken(makeToken(forProject('iz-app-6e1d5')), { certs })).sub, 'uid1');
+    assert.equal((await multi.verifyIdToken(makeToken(forProject('iz-app-staging')), { certs })).sub, 'uid1');
+
+    // 許可していないプロジェクトは拒否し、エラーに受け入れ一覧を含める(原因が分かるように)
+    let message = '';
+    try {
+      await multi.verifyIdToken(makeToken(forProject('other-project')), { certs });
+    } catch (e) {
+      message = e.message;
+    }
+    assert.ok(/aud が不正/.test(message) && /iz-app-6e1d5/.test(message), message);
+
+    delete process.env.FIREBASE_PROJECT;
+    delete require.cache[require.resolve('../src/firebase-auth')];
+  });
+
   // ── IZ課金レシート検証 ──
   console.log('iz-purchase tests:');
   process.env.WANWAN_RECEIPT_SECRET = 'test-secret';

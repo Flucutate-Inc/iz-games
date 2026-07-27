@@ -13,6 +13,9 @@
 <section id="screen-auth" class="screen">
   <div class="auth-box">
     <img class="title-logo" src="/assets/ui/title-logo.png" alt="わんわん大戦争">
+    <!-- IZアプリ内で自動ログインに失敗したときだけ、理由と再試行を出す -->
+    <div class="card iz-note hidden" id="iz-login-note"></div>
+
     <div class="card">
       <div class="tabs">
         <button id="tab-login" class="tab active">ログイン</button>
@@ -20,6 +23,8 @@
       </div>
       <label>表示名<input id="auth-name" maxlength="16" autocomplete="username"></label>
       <label>パスワード<input id="auth-pass" type="password" autocomplete="current-password"></label>
+      <!-- 初期管理者の作成用。?admin=1 を付けて開いたときだけ表示する -->
+      <label id="auth-admin-row" class="hidden">管理者トークン<input id="auth-admin-token" autocomplete="off" placeholder="WANWAN_ADMIN_TOKEN の値"></label>
       <button id="auth-submit" class="btn primary">ログイン</button>
       <p id="auth-error" class="error"></p>
       <p class="terms">はじめると<a href="#" onclick="alert('利用規約(初期版プレースホルダー)');return false">利用規約</a>に同意したことになります</p>
@@ -43,14 +48,6 @@
       <div id="home-deck-summary" class="deck-summary"></div>
     </div>
 
-    <div class="panel gacha-panel">
-      <div class="panel-head">
-        <span class="panel-title">🎁 ガチャ</span>
-        <button class="btn small nav" data-nav="gacha">ひく</button>
-      </div>
-      <p class="terms">コインを使って新しいなかまを迎えられます。</p>
-    </div>
-
     <div class="panel iz-panel hidden" id="iz-shop">
       <div class="panel-head"><span class="panel-title"><i class="coin"></i> コインを購入</span></div>
       <p class="terms">IZ を使ってコインを購入できます。コインはガチャに使えます。</p>
@@ -65,6 +62,7 @@
     <div class="home-spacer"></div>
 
     <button id="btn-start" class="start-btn">たたかう</button>
+    <button id="btn-gacha-home" class="start-btn gacha nav" data-nav="gacha">ガチャ</button>
     <p id="home-error" class="error"></p>
 
     <div class="panel other-panel">
@@ -165,36 +163,56 @@
 </section>
 
 <!-- ガチャ -->
-<section id="screen-gacha" class="screen hidden">
-  <header class="appbar">
-    <button class="btn back" data-nav="home">← ホーム</button>
-    <h2>🎁 ガチャ</h2>
+<section id="screen-gacha" class="screen hidden gacha-screen">
+  <header class="gacha-head">
+    <button class="btn back small" data-nav="home">← もどる</button>
     <span id="gacha-coins" class="coin-chip"></span>
   </header>
-  <div class="gacha-page">
-    <div class="card gacha-banner">
-      <img class="gacha-art" src="/assets/ui/icon-treat.png" alt="">
-      <h3>わんわんガチャ</h3>
-      <p class="terms">コインを使って新しいなかまを迎えよう。すでになかまのわんこが出たときはコインが戻ってきます。</p>
-      <div class="gacha-actions">
-        <button id="btn-gacha-1" class="btn primary big">1回ひく</button>
-        <button id="btn-gacha-10" class="btn big">10回ひく</button>
-      </div>
-      <p id="gacha-error" class="error"></p>
+
+  <div class="gacha-stage">
+    <div class="gacha-title">わんわんガチャ</div>
+    <p class="gacha-sub">コインで あたらしい なかまを むかえよう</p>
+
+    <!-- ガチャ機(背景と同じ画風で生成した1枚絵) -->
+    <div id="gacha-machine" class="machine">
+      <img class="machine-art" src="/assets/ui/gacha-machine.webp" alt="ガチャ機" draggable="false">
+      <div id="gacha-capsule" class="capsule hidden"></div>
     </div>
 
-    <div class="card">
-      <div class="panel-head"><span class="panel-title">提供割合</span></div>
-      <table class="stat-table" id="gacha-rates"></table>
-      <p id="gacha-guarantee" class="terms"></p>
-    </div>
-
-    <div class="card">
-      <div class="panel-head"><span class="panel-title">ラインナップ</span></div>
-      <div id="gacha-pool"></div>
+    <div class="gacha-links">
+      <button class="chip-btn" id="btn-gacha-rates">提供割合</button>
+      <button class="chip-btn" id="btn-gacha-pool">ラインナップ</button>
     </div>
   </div>
-  <div id="gacha-result" class="modal hidden"><div class="card modal-card" id="gacha-result-body"></div></div>
+
+  <div class="gacha-cta">
+    <p id="gacha-error" class="error"></p>
+    <div class="gacha-buttons">
+      <button id="btn-gacha-1" class="pull-btn"><b>1回</b><small></small></button>
+      <button id="btn-gacha-10" class="pull-btn multi"><b>10回</b><small></small><i class="pull-tag"></i></button>
+    </div>
+  </div>
+
+  <!-- 提供割合 / ラインナップ -->
+  <div id="gacha-info" class="modal hidden">
+    <div class="card modal-card">
+      <h3 id="gacha-info-title"></h3>
+      <div id="gacha-info-body"></div>
+      <button class="btn" id="btn-gacha-info-close" style="margin-top:12px;width:100%">とじる</button>
+    </div>
+  </div>
+
+  <!-- 抽選演出 -->
+  <div id="gacha-result" class="gacha-overlay hidden">
+    <div class="burst" id="gacha-burst"></div>
+    <div id="gacha-reveal" class="reveal"></div>
+    <div id="gacha-summary" class="gacha-summary hidden">
+      <div class="summary-cards" id="summary-cards"></div>
+      <p class="summary-line" id="summary-line"></p>
+      <button class="btn primary big" id="btn-gacha-close">とじる</button>
+    </div>
+    <p class="tap-hint" id="gacha-tap-hint">タップでスキップ</p>
+  </div>
 </section>
 
 <!-- ランキング -->

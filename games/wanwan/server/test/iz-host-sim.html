@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>IZホストのふるまい確認(開発用)</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; background: #14102a; color: #f6f1e6; }
+  .row { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+  iframe { width: 390px; height: 780px; border: 2px solid #4a4070; border-radius: 12px; background: #000; }
+  #log { flex: 1; min-width: 320px; font-family: ui-monospace, monospace; font-size: 12px;
+         background: #0b0818; border: 1px solid #4a4070; border-radius: 8px; padding: 12px;
+         max-height: 780px; overflow: auto; white-space: pre-wrap; }
+  label { display: block; margin-bottom: 8px; font-size: 13px; }
+  select, input { font-size: 13px; padding: 4px; }
+</style>
+</head>
+<body>
+<h1>IZホストのふるまい確認</h1>
+<p>IZアプリの WebView と同じ postMessage ブリッジを模擬して、ゲーム側の自動ログイン処理を検証する開発用ページ。
+   ゲームは iframe で読み込まれ、<code>window.parent !== window</code> により「IZ内」と判定される。</p>
+
+<label>ホストの挙動:
+  <select id="mode">
+    <option value="ok">正常(iz:init と iz:idToken を返す)</option>
+    <option value="no-idtoken">iz:getIdToken に応答しない(古いアプリ)</option>
+    <option value="error">iz:error を返す(未ログイン)</option>
+    <option value="slow">応答が遅い(4秒)</option>
+    <option value="wrong-project">別のFirebaseプロジェクトのトークンを返す</option>
+  </select>
+</label>
+<label>ゲームURL: <input id="url" size="52" value="https://wanwan.naggigoishi.workers.dev/"></label>
+<button id="go">読み込む</button>
+
+<div class="row" style="margin-top:12px">
+  <iframe id="game"></iframe>
+  <div id="log"></div>
+</div>
+
+<script>
+const logEl = document.getElementById('log');
+const log = (dir, msg) => {
+  logEl.textContent += `${new Date().toISOString().slice(11, 23)} ${dir} ${JSON.stringify(msg)}\n`;
+  logEl.scrollTop = logEl.scrollHeight;
+};
+
+const frame = document.getElementById('game');
+const post = msg => {
+  log('→game', msg);
+  frame.contentWindow.postMessage(JSON.stringify(msg), '*');
+};
+
+window.addEventListener('message', async e => {
+  let data = e.data;
+  if (typeof data === 'string') { try { data = JSON.parse(data); } catch { return; } }
+  if (!data || typeof data.type !== 'string') return;
+  log('←game', data);
+
+  const mode = document.getElementById('mode').value;
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+
+  if (data.type === 'iz:ready') {
+    if (mode === 'slow') await wait(4000);
+    post({ type: 'iz:init', user: { uid: 'sim-uid', displayName: 'シミュレータ' }, balance: 1000, game: { id: 'wanwan' } });
+    return;
+  }
+  if (data.type === 'iz:getIdToken') {
+    if (mode === 'no-idtoken') return;                        // 応答しない
+    if (mode === 'slow') await wait(4000);
+    if (mode === 'error') { post({ type: 'iz:error', requestId: data.requestId, message: '未ログインです' }); return; }
+
+    // 本物のIDトークンは用意できないので、形だけ本物に似せたトークンを返す。
+    // 署名は通らないが、aud/iss の判定や画面表示の確認はこれで行える。
+    const b64u = o => btoa(unescape(encodeURIComponent(JSON.stringify(o)))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const project = mode === 'wrong-project' ? 'iz-app-staging' : 'iz-app-6e1d5';
+    const now = Math.floor(Date.now() / 1000);
+    const token = [
+      b64u({ alg: 'RS256', kid: 'sim' }),
+      b64u({ aud: project, iss: `https://securetoken.google.com/${project}`, sub: 'sim-uid', exp: now + 3600, iat: now }),
+      'signature',
+    ].join('.');
+    post({ type: 'iz:idToken', requestId: data.requestId, idToken: token });
+  }
+});
+
+document.getElementById('go').onclick = () => {
+  logEl.textContent = '';
+  frame.src = document.getElementById('url').value + '?t=' + Date.now();
+};
+</script>
+</body>
+</html>

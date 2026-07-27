@@ -6,7 +6,12 @@
  */
 const crypto = require('crypto');
 
+/**
+ * 受け入れる Firebase プロジェクト。カンマ区切りで複数指定できる
+ * (本番とステージングの両方のアプリから遊べるようにするため)。
+ */
 const FIREBASE_PROJECT = process.env.FIREBASE_PROJECT || 'iz-app-6e1d5';
+const ALLOWED_PROJECTS = FIREBASE_PROJECT.split(',').map(s => s.trim()).filter(Boolean);
 const CERT_URL =
   'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com';
 
@@ -59,10 +64,15 @@ async function verifyIdToken(idToken, opts = {}) {
   if (!valid) throw new Error('署名検証に失敗しました');
 
   const payload = b64urlJson(p);
-  const project = opts.project || FIREBASE_PROJECT;
+  // opts.project(テスト用)があればそれだけ、無ければ環境変数で許可した一覧と突き合わせる
+  const projects = opts.project ? [opts.project] : ALLOWED_PROJECTS;
   const now = Math.floor(Date.now() / 1000);
-  if (payload.aud !== project) throw new Error(`aud が不正です: ${payload.aud}`);
-  if (payload.iss !== `https://securetoken.google.com/${project}`) throw new Error(`iss が不正です: ${payload.iss}`);
+  if (!projects.includes(payload.aud)) {
+    throw new Error(`aud が不正です: ${payload.aud}(このゲームが受け付けるのは ${projects.join(' / ')})`);
+  }
+  if (!projects.some(pr => payload.iss === `https://securetoken.google.com/${pr}`)) {
+    throw new Error(`iss が不正です: ${payload.iss}`);
+  }
   if (typeof payload.exp !== 'number' || payload.exp <= now) throw new Error('トークンの有効期限が切れています');
   if (typeof payload.iat === 'number' && payload.iat > now + 300) throw new Error('iat が未来です');
   if (typeof payload.sub !== 'string' || payload.sub.length === 0 || payload.sub.length > 128) {
@@ -71,4 +81,4 @@ async function verifyIdToken(idToken, opts = {}) {
   return payload;
 }
 
-module.exports = { verifyIdToken, FIREBASE_PROJECT };
+module.exports = { verifyIdToken, FIREBASE_PROJECT, ALLOWED_PROJECTS };

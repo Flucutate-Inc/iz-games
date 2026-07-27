@@ -50,6 +50,24 @@
   --tap: 48px; /* 最小タッチターゲット */
   --safe-t: env(safe-area-inset-top, 0px);
   --safe-b: env(safe-area-inset-bottom, 0px);
+
+  /* 表示用フォント(見出し・主要ボタン) */
+  --font-display: 'Wanwan Display', 'Hiragino Maru Gothic ProN', 'BIZ UDPGothic', system-ui, sans-serif;
+
+  /* ゲームボタンの厚み(押すと沈む量と一致させる) */
+  --btn-depth: 6px;
+}
+
+/*
+ * 見出し・ボタン用の表示フォント(丸ゴシックのExtraBold)。
+ * 実際に使う文字だけのサブセット(19KB)を自前配信する(tools/fetch-display-font.sh)。
+ */
+@font-face {
+  font-family: 'Wanwan Display';
+  src: url('/assets/fonts/mplus-rounded-800-subset.woff2') format('woff2');
+  font-weight: 800;
+  font-style: normal;
+  font-display: swap;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
@@ -118,7 +136,7 @@ img { image-rendering: pixelated; }
 .terms { font-size: var(--t-cap); color: var(--text-3); margin-top: var(--s2); line-height: 1.6; }
 .terms a { color: var(--accent); }
 h1, h2, h3, h4 { font-weight: 700; line-height: 1.3; }
-h2 { font-size: var(--t-title); }
+h2 { font-size: var(--t-title); font-family: var(--font-display); font-weight: 800; letter-spacing: 0.02em; }
 h3 { font-size: var(--t-body); }
 
 .card, .panel {
@@ -147,12 +165,23 @@ h3 { font-size: var(--t-body); }
   box-shadow: var(--sh-1);
   transition: transform 80ms ease, filter 80ms ease;
 }
-.btn:active { transform: scale(0.97); filter: brightness(1.1); }
+.btn { box-shadow: 0 3px 0 rgba(24, 15, 48, 0.85), var(--sh-1); }
+.btn:active {
+  transform: translateY(3px); filter: brightness(1.08);
+  box-shadow: 0 0 0 rgba(24, 15, 48, 0.85), 0 1px 4px rgba(12, 8, 28, 0.4);
+}
+.btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .btn.primary {
-  background: linear-gradient(180deg, var(--accent) 0%, var(--accent-2) 100%);
+  background: linear-gradient(180deg, #ffd98a 0%, var(--accent) 45%, var(--accent-2) 100%);
   color: var(--accent-ink);
-  border-color: rgba(255, 255, 255, 0.25);
-  box-shadow: var(--sh-accent);
+  border-color: rgba(255, 255, 255, 0.3);
+  font-family: var(--font-display); font-weight: 800;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.4);
+  box-shadow: 0 4px 0 #b5560c, 0 8px 16px rgba(20, 10, 40, 0.4), inset 0 2px 0 rgba(255, 255, 255, 0.75);
+}
+.btn.primary:active {
+  transform: translateY(4px);
+  box-shadow: 0 0 0 #b5560c, 0 2px 6px rgba(20, 10, 40, 0.35), inset 0 2px 0 rgba(255, 255, 255, 0.65);
 }
 .btn.ghost { background: transparent; box-shadow: none; }
 .btn.big { width: 100%; min-height: 56px; font-size: var(--t-title); }
@@ -203,6 +232,9 @@ label { display: flex; flex-direction: column; gap: var(--s1); font-size: var(--
   border-radius: var(--r-md); cursor: pointer; font-family: inherit; font-size: var(--t-body);
 }
 .tab.active { background: linear-gradient(180deg, var(--accent) 0%, var(--accent-2) 100%); color: var(--accent-ink); font-weight: 700; border-color: transparent; }
+/* IZ自動ログイン失敗時の説明 */
+.iz-note { border-color: var(--accent); }
+.iz-note b { color: var(--accent); }
 #screen-auth label { margin-bottom: var(--s3); }
 #auth-submit { width: 100%; margin-top: var(--s2); }
 
@@ -223,16 +255,82 @@ label { display: flex; flex-direction: column; gap: var(--s1); font-size: var(--
 
 /* CTA は親指ゾーン(下1/3)に来るよう、上のパネル群を押し上げる */
 .home-spacer { flex: 1; min-height: var(--s4); }
+
+/*
+ * ── ゲームボタン ────────────────────────────────────────
+ * 家庭用ゲーム機のUIのような「厚みのあるボタン」。
+ *  - ぼかさない硬い影(0 6px 0)で物理的な厚みを出し、押すと同じ量だけ沈める
+ *  - 上面のハイライトと下側の陰影で樹脂の丸みを作る
+ *  - 数秒ごとに斜めの光沢が走る(::after)。控えめな周期で「うるさくない」範囲に留める
+ * 影は黒ではなく背景に馴染む濃紫を使う(デザインシステムの方針)。
+ */
 .start-btn {
-  width: 100%; min-height: 68px;
-  font-family: inherit; font-size: var(--t-hero); font-weight: 700; letter-spacing: 0.08em;
+  position: relative; overflow: hidden;
+  width: 100%; min-height: 72px;
+  font-family: var(--font-display); font-size: var(--t-hero); font-weight: 800; letter-spacing: 0.1em;
   color: var(--accent-ink); cursor: pointer;
-  background: linear-gradient(180deg, #ffd166 0%, var(--accent) 45%, var(--accent-2) 100%);
-  border: none; border-radius: var(--r-lg);
-  box-shadow: var(--sh-accent), inset 0 2px 0 rgba(255, 255, 255, 0.55);
-  transition: transform 80ms ease;
+  background: linear-gradient(180deg, #ffe6a8 0%, #ffc24d 38%, var(--accent) 62%, var(--accent-2) 100%);
+  border: none; border-radius: 20px;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.5);
+  box-shadow:
+    0 var(--btn-depth) 0 #b5560c,              /* 厚み */
+    0 calc(var(--btn-depth) + 8px) 18px rgba(20, 10, 40, 0.45), /* 接地影 */
+    inset 0 2px 0 rgba(255, 255, 255, 0.85),   /* 上端の光 */
+    inset 0 -6px 10px rgba(150, 60, 0, 0.35);  /* 下端の陰 */
+  transition: transform 90ms cubic-bezier(0.2, 0.9, 0.3, 1.2), box-shadow 90ms ease, filter 90ms ease;
 }
-.start-btn:active { transform: scale(0.98); }
+/* 上面の丸み(ガラスのようなハイライト) */
+.start-btn::before {
+  content: ''; position: absolute; inset: 3px 3px auto; height: 42%;
+  border-radius: 17px 17px 60% 60% / 17px 17px 22px 22px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.62), rgba(255, 255, 255, 0));
+  pointer-events: none;
+}
+/* 斜めに走る光沢 */
+.start-btn::after {
+  content: ''; position: absolute; top: -60%; left: -30%; width: 28%; height: 220%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
+  transform: rotate(18deg); pointer-events: none;
+  animation: sheen 4.5s ease-in-out infinite;
+}
+@keyframes sheen {
+  0%, 62% { left: -30%; opacity: 0; }
+  66% { opacity: 1; }
+  86%, 100% { left: 120%; opacity: 0; }
+}
+.start-btn:active {
+  transform: translateY(var(--btn-depth));
+  filter: brightness(1.06);
+  box-shadow:
+    0 0 0 #b5560c,
+    0 2px 6px rgba(20, 10, 40, 0.4),
+    inset 0 2px 0 rgba(255, 255, 255, 0.7),
+    inset 0 -3px 8px rgba(150, 60, 0, 0.4);
+}
+.start-btn:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+
+/* ガチャは対戦と並ぶ主要導線。大きさは揃え、色と質感で役割を分ける */
+.start-btn.gacha {
+  margin-top: var(--s3); min-height: 72px; font-size: var(--t-hero);
+  color: #fff; text-shadow: 0 1px 0 rgba(0, 0, 0, 0.25);
+  background: linear-gradient(180deg, #f0d9ff 0%, #c894ff 34%, #9a5bf0 62%, #6f34c9 100%);
+  box-shadow:
+    0 var(--btn-depth) 0 #4a1f8f,
+    0 calc(var(--btn-depth) + 8px) 18px rgba(20, 10, 40, 0.45),
+    inset 0 2px 0 rgba(255, 255, 255, 0.8),
+    inset 0 -6px 10px rgba(60, 20, 120, 0.4);
+}
+.start-btn.gacha:active {
+  box-shadow:
+    0 0 0 #4a1f8f,
+    0 2px 6px rgba(20, 10, 40, 0.4),
+    inset 0 2px 0 rgba(255, 255, 255, 0.65),
+    inset 0 -3px 8px rgba(60, 20, 120, 0.45);
+}
+/* 動きを減らす設定では光沢アニメーションを止める */
+@media (prefers-reduced-motion: reduce) {
+  .start-btn::after, .pull-btn::after { animation: none; opacity: 0; }
+}
 
 .other-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--s2); }
 .menu-tile {
@@ -264,9 +362,25 @@ label { display: flex; flex-direction: column; gap: var(--s1); font-size: var(--
   padding: var(--s4); cursor: pointer; font-family: inherit;
   box-shadow: var(--sh-1); transition: transform 80ms ease;
 }
-.mode-btn:active { transform: scale(0.98); }
-.mode-btn.primary { background: linear-gradient(180deg, var(--accent) 0%, var(--accent-2) 100%); color: var(--accent-ink); border-color: transparent; box-shadow: var(--sh-accent); }
-.mode-btn b { display: block; font-size: var(--t-title); }
+.mode-btn {
+  box-shadow: 0 4px 0 rgba(28, 18, 56, 0.9), 0 8px 16px rgba(12, 8, 28, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  transition: transform 90ms cubic-bezier(0.2, 0.9, 0.3, 1.2), box-shadow 90ms ease;
+}
+.mode-btn:active {
+  transform: translateY(4px);
+  box-shadow: 0 0 0 rgba(28, 18, 56, 0.9), 0 2px 6px rgba(12, 8, 28, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+.mode-btn.primary {
+  background: linear-gradient(180deg, #ffe6a8 0%, #ffc24d 38%, var(--accent) 62%, var(--accent-2) 100%);
+  color: var(--accent-ink); border-color: transparent;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.45);
+  box-shadow: 0 5px 0 #b5560c, 0 10px 18px rgba(20, 10, 40, 0.45), inset 0 2px 0 rgba(255, 255, 255, 0.8);
+}
+.mode-btn.primary:active {
+  transform: translateY(5px);
+  box-shadow: 0 0 0 #b5560c, 0 2px 6px rgba(20, 10, 40, 0.4), inset 0 2px 0 rgba(255, 255, 255, 0.7);
+}
+.mode-btn b { display: block; font-family: var(--font-display); font-size: var(--t-title); font-weight: 800; }
 .mode-btn small { font-size: var(--t-cap); opacity: 0.78; }
 .mode-ico { font-size: 30px; line-height: 1; }
 .room-row { display: flex; gap: var(--s2); }
@@ -310,30 +424,253 @@ label { display: flex; flex-direction: column; gap: var(--s1); font-size: var(--
 
 .pet-cell .rarity { position: absolute; top: var(--s1); right: var(--s1); }
 
-/* ── ガチャ ───────────────────────────────────────────── */
-.gacha-page {
-  flex: 1; width: min(560px, 100%); margin: 0 auto;
-  padding: var(--s4); padding-bottom: calc(var(--safe-b) + var(--s6));
-  display: flex; flex-direction: column; gap: var(--s3);
+/* ── ガチャ(ゲーム調) ─────────────────────────────────── */
+/*
+ * 背景は「生成した背景画像 → 無ければグラデーション」の順に重ねる。
+ * 画像が無くても成立するので、tools/generate-gacha-bg.js は任意実行でよい。
+ */
+.gacha-screen {
+  position: relative;
+  background:
+    radial-gradient(90% 50% at 50% 8%, rgba(255, 176, 32, 0.22) 0%, transparent 60%),
+    radial-gradient(120% 60% at 50% 100%, #3a2f63 0%, transparent 60%),
+    linear-gradient(180deg, #221a3d 0%, #14102a 100%);
+  overflow: hidden;
 }
-.gacha-banner { text-align: center; }
-.gacha-art { width: 96px; height: 96px; object-fit: contain; margin-bottom: var(--s2); animation: hop 1.2s ease-in-out infinite alternate; }
-.gacha-actions { display: flex; flex-direction: column; gap: var(--s2); margin-top: var(--s4); }
-.gacha-actions .btn { flex-direction: column; gap: 0; }
-.gacha-actions .btn small { font-size: var(--t-cap); font-weight: 700; opacity: 0.82; }
-.pool-head { margin: var(--s3) 0 var(--s2); font-size: var(--t-cap); color: var(--text-2); }
-.pool-head:first-child { margin-top: 0; }
-#gacha-pool .pet-cell { cursor: default; }
-#gacha-pool .pet-cell:active { transform: none; }
-#gacha-rates td:last-child { white-space: nowrap; }
+/*
+ * 背景画像(WebP 29KB)。無ければコードで描いた svg が下敷きになる。
+ * 中央はUIが乗るので暗く落とすが、mask 合成は描画コストが高く端末によっては
+ * 重くなるため、単純なグラデーションを上に重ねて同じ見た目を作る。
+ */
+.gacha-screen::before {
+  content: ''; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background:
+    /* 中央を落とすスクリム(手前) */
+    radial-gradient(74% 46% at 50% 44%, rgba(18, 14, 38, 0.94) 0%, rgba(18, 14, 38, 0.82) 42%, rgba(18, 14, 38, 0.25) 72%, rgba(18, 14, 38, 0.1) 100%),
+    url('/assets/background/gacha-bg.webp') center / cover no-repeat,
+    url('/assets/background/gacha-bg.svg') center / cover no-repeat;
+}
+.gacha-screen > * { position: relative; z-index: 1; }
 
-.gacha-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: var(--s2); margin-top: var(--s3); }
+/* 舞い上がる光の粒(背景が無くても寂しくならないように) */
+.gacha-stage::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none; z-index: -1;
+  background-image:
+    radial-gradient(2px 2px at 12% 78%, rgba(255, 226, 168, 0.9), transparent 60%),
+    radial-gradient(2px 2px at 84% 66%, rgba(255, 226, 168, 0.7), transparent 60%),
+    radial-gradient(3px 3px at 26% 34%, rgba(255, 255, 255, 0.55), transparent 60%),
+    radial-gradient(2px 2px at 68% 22%, rgba(200, 148, 255, 0.8), transparent 60%),
+    radial-gradient(2px 2px at 46% 88%, rgba(255, 255, 255, 0.5), transparent 60%);
+  animation: motes 9s ease-in-out infinite alternate;
+}
+@keyframes motes {
+  from { transform: translateY(6px); opacity: 0.6; }
+  to { transform: translateY(-10px); opacity: 1; }
+}
+.gacha-head {
+  display: flex; align-items: center; gap: var(--s2);
+  padding: calc(var(--safe-t) + var(--s3)) var(--s4) 0;
+}
+.gacha-head .coin-chip { margin-left: auto; font-size: var(--t-body); padding: var(--s2) var(--s4); }
+
+.gacha-stage {
+  flex: 1; min-height: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: var(--s2); padding: var(--s3) var(--s4) 0; text-align: center;
+}
+.gacha-title {
+  font-family: var(--font-display);
+  font-size: 32px; font-weight: 800; letter-spacing: 0.06em;
+  background: linear-gradient(180deg, #fff3cf 0%, #ffd166 45%, var(--accent-2) 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 3px 0 rgba(90, 40, 0, 0.55));
+}
+.gacha-sub { font-size: var(--t-cap); color: var(--text-3); }
+
+/* ガチャ機(生成した1枚絵。背景イラストと画風を合わせている) */
+.machine { position: relative; width: min(250px, 62vw); margin: var(--s2) 0 0; }
+.machine-art {
+  display: block; width: 100%; height: auto;
+  filter: drop-shadow(0 18px 26px rgba(10, 6, 24, 0.6));
+  -webkit-user-select: none; user-select: none;
+}
+/* 足元の落ち影(床に置かれている感じを出す) */
+.machine::after {
+  content: ''; position: absolute; left: 50%; bottom: -14px;
+  width: 62%; height: 22px; transform: translateX(-50%);
+  background: radial-gradient(50% 50%, rgba(0, 0, 0, 0.55), transparent 70%);
+  filter: blur(3px);
+}
+.machine.shake { animation: machine-shake 0.42s ease-in-out 2; }
+@keyframes machine-shake {
+  0%, 100% { transform: translateX(0) rotate(0); }
+  25% { transform: translateX(-5px) rotate(-1.6deg); }
+  75% { transform: translateX(5px) rotate(1.6deg); }
+}
+
+/* 排出口から落ちてくるカプセル(ガチャ機の絵の下端に合わせる) */
+.capsule {
+  position: absolute; left: 50%; bottom: 2%; width: 15%; aspect-ratio: 1; margin-left: -7.5%;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #fffdf7 0 50%, #ffc24d 50% 100%);
+  box-shadow: 0 6px 14px rgba(12, 8, 28, 0.6), inset 0 -3px 6px rgba(180, 110, 20, 0.45);
+}
+.capsule.drop { animation: capsule-drop 0.5s cubic-bezier(0.3, 1.4, 0.5, 1) both; }
+@keyframes capsule-drop {
+  from { transform: translateY(-26px) scale(0.7); opacity: 0; }
+  60% { transform: translateY(6px) scale(1.05); opacity: 1; }
+  to { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+.gacha-links { display: flex; gap: var(--s2); }
+.chip-btn {
+  min-height: 36px; padding: 0 var(--s4);
+  background: rgba(0, 0, 0, 0.3); color: var(--text-2);
+  border: 1px solid var(--line); border-radius: var(--r-full);
+  font-family: inherit; font-size: var(--t-cap); cursor: pointer;
+}
+.chip-btn:active { transform: scale(0.96); }
+
+/* CTA(親指ゾーン) */
+.gacha-cta {
+  padding: 0 var(--s4) calc(var(--safe-b) + var(--s4));
+  width: min(560px, 100%); margin: 0 auto;
+}
+.gacha-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s3); padding-top: 10px; }
+/* ホームの大ボタンと同じ「厚みのある樹脂ボタン」。役割は色で分ける */
+.pull-btn {
+  position: relative; min-height: 78px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+  font-family: var(--font-display); color: var(--accent-ink); cursor: pointer;
+  background: linear-gradient(180deg, #ffe6a8 0%, #ffc24d 38%, var(--accent) 62%, var(--accent-2) 100%);
+  border: none; border-radius: 18px;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.45);
+  box-shadow:
+    0 var(--btn-depth) 0 #b5560c,
+    0 calc(var(--btn-depth) + 8px) 16px rgba(20, 10, 40, 0.45),
+    inset 0 2px 0 rgba(255, 255, 255, 0.85),
+    inset 0 -6px 10px rgba(150, 60, 0, 0.35);
+  transition: transform 90ms cubic-bezier(0.2, 0.9, 0.3, 1.2), box-shadow 90ms ease, filter 90ms ease;
+}
+.pull-btn::before {
+  content: ''; position: absolute; inset: 3px 3px auto; height: 40%;
+  border-radius: 15px 15px 60% 60% / 15px 15px 20px 20px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0));
+  pointer-events: none;
+}
+.pull-btn b { font-size: 22px; font-weight: 800; letter-spacing: 0.04em; }
+.pull-btn small {
+  font-size: var(--t-cap); font-weight: 800; display: flex; align-items: center;
+  background: rgba(0, 0, 0, 0.18); border-radius: var(--r-full); padding: 1px 10px; margin-top: 2px;
+}
+.pull-btn:active {
+  transform: translateY(var(--btn-depth));
+  filter: brightness(1.06);
+  box-shadow: 0 0 0 #b5560c, 0 2px 6px rgba(20, 10, 40, 0.4),
+              inset 0 2px 0 rgba(255, 255, 255, 0.7), inset 0 -3px 8px rgba(150, 60, 0, 0.4);
+}
+.pull-btn:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+.pull-btn:disabled {
+  filter: grayscale(0.75) brightness(0.62); cursor: default;
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.35), inset 0 2px 0 rgba(255, 255, 255, 0.25);
+  transform: translateY(3px);
+}
+.pull-btn.multi {
+  color: #fff; text-shadow: 0 1px 0 rgba(0, 0, 0, 0.25);
+  background: linear-gradient(180deg, #f0d9ff 0%, #c894ff 34%, #9a5bf0 62%, #6f34c9 100%);
+  box-shadow:
+    0 var(--btn-depth) 0 #4a1f8f,
+    0 calc(var(--btn-depth) + 8px) 16px rgba(20, 10, 40, 0.45),
+    inset 0 2px 0 rgba(255, 255, 255, 0.8),
+    inset 0 -6px 10px rgba(60, 20, 120, 0.4);
+}
+.pull-btn.multi:active {
+  box-shadow: 0 0 0 #4a1f8f, 0 2px 6px rgba(20, 10, 40, 0.4),
+              inset 0 2px 0 rgba(255, 255, 255, 0.65), inset 0 -3px 8px rgba(60, 20, 120, 0.45);
+}
+/* 10連の「確定」バッジ。少しだけ弾ませて視線を集める */
+.pull-tag {
+  position: absolute; top: -9px; right: -4px; z-index: 2;
+  background: linear-gradient(180deg, #ff8a8a, #e93b3b); color: #fff;
+  font-family: var(--font-display); font-style: normal; font-size: 10px; font-weight: 800;
+  padding: 3px 9px; border-radius: var(--r-full);
+  box-shadow: 0 2px 0 #a81f1f, 0 4px 10px rgba(20, 10, 40, 0.5);
+  animation: tag-bob 2.8s ease-in-out infinite;
+}
+@keyframes tag-bob {
+  0%, 88%, 100% { transform: translateY(0) rotate(-3deg); }
+  92% { transform: translateY(-3px) rotate(-6deg); }
+  96% { transform: translateY(0) rotate(-1deg); }
+}
+
+/* 抽選演出 */
+.gacha-overlay {
+  position: fixed; inset: 0; z-index: 200;
+  background: radial-gradient(60% 50% at 50% 45%, #2a2150 0%, #0b0818 70%);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: var(--s4);
+}
+.burst {
+  position: absolute; width: 150vmax; height: 150vmax; border-radius: 50%;
+  background: conic-gradient(from 0deg, rgba(255, 255, 255, 0.14) 0 4deg, transparent 4deg 12deg);
+  opacity: 0; animation: spin 24s linear infinite;
+}
+.burst.on { opacity: 0.45; }
+.burst.sr {
+  background: conic-gradient(from 0deg, rgba(255, 209, 102, 0.42) 0 4deg, transparent 4deg 12deg);
+  opacity: 0.9; animation-duration: 14s;
+}
+/* カード背後の後光(レアリティで色を変える) */
+.reveal::before {
+  content: ''; position: absolute; width: 92vw; aspect-ratio: 1; border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.22) 0%, transparent 62%);
+  animation: halo 2.6s ease-in-out infinite;
+}
+.reveal.r-R::before { background: radial-gradient(circle, rgba(88, 166, 255, 0.4) 0%, transparent 62%); }
+.reveal.r-SR::before { background: radial-gradient(circle, rgba(255, 209, 102, 0.5) 0%, transparent 64%); }
+@keyframes halo { 50% { transform: scale(1.08); opacity: 0.75; } }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.reveal { position: relative; display: flex; align-items: center; justify-content: center; min-height: 40vh; }
+.reveal.hidden { display: none; }
+.reveal-card {
+  position: relative; width: min(230px, 62vw); text-align: center;
+  padding: var(--s4) var(--s3) var(--s3);
+  background: linear-gradient(180deg, var(--surface) 0%, var(--bg-2) 100%);
+  border: 2px solid var(--line); border-radius: var(--r-lg);
+  box-shadow: var(--sh-2);
+  animation: card-in 420ms cubic-bezier(0.2, 0.9, 0.3, 1.3) both;
+}
+@keyframes card-in {
+  from { transform: scale(0.4) rotateY(90deg); opacity: 0; }
+  to { transform: scale(1) rotateY(0); opacity: 1; }
+}
+.reveal-card img { width: 62%; aspect-ratio: 1; object-fit: contain; image-rendering: pixelated; }
+.reveal-card .rname { display: block; font-size: var(--t-title); font-weight: 700; margin-top: var(--s2); }
+.reveal-card .rtag { display: inline-block; margin-top: var(--s2); font-size: var(--t-cap); font-weight: 700; }
+.reveal-card .rtag.new { color: var(--green); }
+.reveal-card .rtag.dup { color: var(--accent); }
+.reveal-card.r-R { border-color: var(--blue); box-shadow: 0 0 28px rgba(88, 166, 255, 0.5), var(--sh-2); }
+.reveal-card.r-SR { border-color: #ffd166; box-shadow: 0 0 42px rgba(255, 209, 102, 0.75), var(--sh-2); }
+.reveal-count { position: absolute; top: -28px; left: 50%; transform: translateX(-50%); font-size: var(--t-cap); color: var(--text-3); }
+
+/* 10連でも画面からはみ出さないよう、カード側だけを内部スクロールにする */
+.gacha-summary {
+  width: min(560px, 100%); text-align: center;
+  display: flex; flex-direction: column; gap: var(--s2);
+  max-height: calc(100dvh - var(--safe-t) - var(--safe-b) - var(--s6));
+}
+.summary-cards {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(84px, 100px));
+  justify-content: center; gap: var(--s2);
+  flex: 1; min-height: 0; overflow-y: auto; padding: var(--s1);
+}
 .gacha-card {
   position: relative; text-align: center; padding: var(--s2) var(--s1);
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md);
   animation: pop 260ms cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
 }
-.gacha-card img { width: 100%; aspect-ratio: 1; object-fit: contain; }
+.gacha-card img { width: 100%; aspect-ratio: 1; object-fit: contain; image-rendering: pixelated; }
 .gacha-card .gname { display: block; font-size: 11px; color: var(--text-2); }
 .gacha-card .gtag { display: block; font-size: 10px; font-weight: 700; color: var(--green); }
 .gacha-card.dup .gtag { color: var(--accent); }
@@ -341,6 +678,18 @@ label { display: flex; flex-direction: column; gap: var(--s1); font-size: var(--
 .gacha-card.r-R { border-color: var(--blue); }
 .gacha-card.r-SR { border-color: var(--accent); box-shadow: var(--sh-accent); }
 .gacha-card .rarity { position: absolute; top: var(--s1); left: var(--s1); }
+.summary-line { font-size: var(--t-cap); color: var(--text-2); margin-bottom: var(--s3); }
+.tap-hint { position: absolute; bottom: calc(var(--safe-b) + var(--s4)); font-size: var(--t-cap); color: var(--text-3); animation: blink 1.4s ease-in-out infinite; }
+@keyframes blink { 50% { opacity: 0.25; } }
+
+/* 提供割合・ラインナップ */
+.rate-row { display: flex; align-items: center; gap: var(--s2); padding: var(--s2) 0; border-bottom: 1px solid var(--line); font-size: var(--t-body); }
+.rate-row .rate-val { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; }
+.rate-row small { color: var(--text-3); font-size: 11px; }
+.pool-head { margin: var(--s3) 0 var(--s2); font-size: var(--t-cap); color: var(--text-2); }
+.pool-head:first-child { margin-top: 0; }
+#gacha-info-body .pet-cell { cursor: default; }
+#gacha-info-body .pet-cell:active { transform: none; }
 
 /* ── モーダル ─────────────────────────────────────────── */
 .modal {
