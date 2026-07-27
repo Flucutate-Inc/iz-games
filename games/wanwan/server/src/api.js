@@ -5,7 +5,7 @@ const db = require('./db');
 const balance = require('./balance');
 const gacha = require('./gacha');
 const { register, login, loginWithFirebase, logout, publicUser, requireAuth, httpError } = require('./auth');
-const { verifyIdToken } = require('./firebase-auth');
+const { verifyIdToken, ALLOWED_PROJECTS } = require('./firebase-auth');
 const receipts = require('./receipt');
 
 const router = express.Router();
@@ -35,6 +35,15 @@ router.post('/login-iz', async (req, res, next) => {
   } catch (e) {
     next(e.status ? e : httpError(401, `IZログインに失敗しました: ${e.message}`));
   }
+});
+
+/**
+ * IZ連携の設定(クライアントの自己診断用)。
+ * 自動ログインに失敗したとき、アプリのトークンの aud とここを突き合わせれば
+ * 「別のFirebaseプロジェクトのアプリから来ている」ことが即座に分かる。
+ */
+router.get('/iz-config', (req, res) => {
+  res.json({ firebaseProjects: ALLOWED_PROJECTS });
 });
 
 router.post('/logout', requireAuth, (req, res) => {

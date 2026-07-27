@@ -692,6 +692,24 @@
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const izEmbedded = () => !!window.ReactNativeWebView || window.parent !== window;
 
+  /** IDトークン(JWT)のペイロードをその場で読む(検証はしない。原因表示のためだけ) */
+  function decodeJwtPayload(token) {
+    try {
+      const seg = String(token).split('.')[1];
+      const json = atob(seg.replace(/-/g, '+').replace(/_/g, '/'));
+      return JSON.parse(decodeURIComponent(escape(json)));
+    } catch {
+      return null;
+    }
+  }
+
+  /** IZ連携の診断結果(?diag=1 と失敗カードで使う) */
+  const izDiag = { steps: [], token: null };
+  const diagPush = (label, value) => {
+    izDiag.steps.push({ label, value });
+    console.log(`[IZ診断] ${label}: ${value}`);
+  };
+
   /**
    * IZ アプリ内(WebView/iframe)で開かれた場合の自動ログイン。
    * ホストから Firebase ID トークンを受け取り、サーバーで署名検証する。
@@ -701,50 +719,83 @@
    * 数回リトライし、失敗したら理由を返して画面に出す(黙って落とさない)。
    */
   async function tryIzAutoLogin(onStatus = () => {}) {
+    izDiag.steps = [];
+    diagPush('埋め込み', window.ReactNativeWebView ? 'IZアプリ(WebView)' : window.parent !== window ? 'iframe' : 'なし(通常のブラウザ)');
     if (!izEmbedded()) return { ok: false, reason: 'IZアプリ内ではありません' };
+    diagPush('IZ SDK', window.IZ ? `あり(protocol ${window.IZ.PROTOCOL})` : 'なし');
     if (!window.IZ) return { ok: false, reason: 'IZ SDK を読み込めませんでした' };
 
     let init;
     try {
       onStatus('IZアプリと接続しています…');
       init = await withTimeout(IZ.ready(), 8000);
+      diagPush('iz:init', `受信(uid ${init.user && init.user.uid ? 'あり' : 'なし'})`);
     } catch {
-      return { ok: false, reason: 'IZアプリからの応答がありません', hint: 'update' };
+      diagPush('iz:init', '応答なし(8秒)');
+      return { ok: false, reason: 'IZアプリからの応答がありません', hint: 'update', diag: izDiag };
     }
 
     let lastError = '';
+    let hint = '';
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
         onStatus(attempt === 1 ? 'IZアカウントを確認しています…' : `IZアカウントを確認しています…(${attempt}/3)`);
         const idToken = await withTimeout(IZ.getIdToken(), 6000);
         if (!idToken) throw new Error('IZアカウントの情報を取得できませんでした');
+        izDiag.token = decodeJwtPayload(idToken);
+        diagPush('iz:getIdToken', `取得(aud ${izDiag.token ? izDiag.token.aud : '不明'})`);
         onStatus('ログインしています…');
         const res = await Net.api('/login-iz', { body: { idToken, displayName: init.user && init.user.displayName } });
         Net.setToken(res.token);
         me = res.user;
+        diagPush('サーバー検証', 'OK');
         return { ok: true };
       } catch (e) {
         lastError = e && e.message === 'timeout' ? 'IZアプリが応答しませんでした' : (e && e.message) || '不明なエラー';
-        console.warn(`[IZ自動ログイン] ${attempt}回目失敗: ${lastError}`);
+        diagPush(`試行${attempt}`, lastError);
+        // aud 不一致は「アプリのFirebaseプロジェクトが違う」= 何度やっても直らないので即座に打ち切る
+        if (/aud が不正/.test(lastError) || /iss が不正/.test(lastError)) { hint = 'project'; break; }
         if (attempt < 3) await sleep(1000 * attempt);
       }
     }
-    // 3回とも応答が無い = ホストがゲーム連携(iz:getIdToken)に未対応の可能性が高い
-    return { ok: false, reason: lastError, hint: /応答/.test(lastError) ? 'update' : '' };
+    if (!hint) hint = /応答/.test(lastError) ? 'update' : '';
+    return { ok: false, reason: lastError, hint, diag: izDiag };
   }
 
   /** IZ内で自動ログインできなかったときに、理由と再試行をログイン画面に出す */
-  function showIzFallback(result) {
+  async function showIzFallback(result) {
     const box = $('iz-login-note');
     if (!box) return;
+
+    // 原因が「アプリと違うFirebaseプロジェクト」の場合は、その差分を具体的に出す
+    let detail = '';
+    if (result.hint === 'project') {
+      let expected = '(取得できませんでした)';
+      try {
+        expected = (await Net.api('/iz-config')).firebaseProjects.join(' / ');
+      } catch { /* 表示は諦める */ }
+      const aud = izDiag.token && izDiag.token.aud ? izDiag.token.aud : '不明';
+      detail = `<p class="terms">アプリのプロジェクト: <b>${esc(aud)}</b><br>`
+        + `ゲーム側の受け入れ設定: <b>${esc(expected)}</b><br>`
+        + 'この2つが一致していないため検証に失敗しています。</p>';
+    } else if (result.hint === 'update') {
+      detail = '<p class="terms">IZアプリが最新版か確認してください(ゲーム連携に対応したバージョンが必要です)。</p>';
+    }
+
     box.classList.remove('hidden');
     box.innerHTML = `
       <p><b>IZアカウントで自動ログインできませんでした</b></p>
-      <p class="terms">理由: ${esc(result.reason || '不明')}${
-        result.hint === 'update' ? '<br>IZアプリが最新版か確認してください(ゲーム連携に対応したバージョンが必要です)。' : ''
-      }</p>
+      <p class="terms">理由: ${esc(result.reason || '不明')}</p>
+      ${detail}
       <button class="btn primary" id="btn-iz-retry" style="width:100%;margin-top:8px">IZアカウントで再試行</button>
+      <button class="btn small" id="btn-iz-diag" style="width:100%;margin-top:8px">詳しい情報を見る</button>
+      <pre id="iz-diag-body" class="hidden" style="font-size:11px;white-space:pre-wrap;margin-top:8px;opacity:.8"></pre>
       <p class="terms">うまくいかない場合は、下の表示名とパスワードでも遊べます。</p>`;
+    $('btn-iz-diag').onclick = () => {
+      const pre = $('iz-diag-body');
+      pre.classList.toggle('hidden');
+      pre.textContent = izDiagText();
+    };
     $('btn-iz-retry').onclick = async () => {
       $('btn-iz-retry').disabled = true;
       $('matching-status').textContent = 'IZアカウントでログイン中…';
@@ -755,9 +806,25 @@
         Net.connectWS();
       } else {
         show('auth');
-        showIzFallback(retry);
+        await showIzFallback(retry);
       }
     };
+  }
+
+  /** 診断結果を人が読める形にする(サポートへ貼れるように) */
+  function izDiagText() {
+    const lines = izDiag.steps.map(s => `${s.label}: ${s.value}`);
+    if (izDiag.token) {
+      lines.push(`トークン aud: ${izDiag.token.aud}`);
+      lines.push(`トークン iss: ${izDiag.token.iss}`);
+      if (izDiag.token.exp) {
+        const left = Math.round(izDiag.token.exp - Date.now() / 1000);
+        lines.push(`トークン有効期限: 残り${left}秒`);
+      }
+    }
+    lines.push(`URL: ${location.origin}`);
+    lines.push(`UA: ${navigator.userAgent.slice(0, 120)}`);
+    return lines.join('\n');
   }
 
   (async () => {
@@ -793,7 +860,7 @@
         }
       }
       show('auth');
-      showIzFallback(result);
+      await showIzFallback(result);
       return;
     }
 

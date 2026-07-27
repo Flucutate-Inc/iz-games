@@ -25,6 +25,7 @@
     <option value="no-idtoken">iz:getIdToken に応答しない(古いアプリ)</option>
     <option value="error">iz:error を返す(未ログイン)</option>
     <option value="slow">応答が遅い(4秒)</option>
+    <option value="wrong-project">別のFirebaseプロジェクトのトークンを返す</option>
   </select>
 </label>
 <label>ゲームURL: <input id="url" size="52" value="https://wanwan.naggigoishi.workers.dev/"></label>
@@ -66,9 +67,18 @@ window.addEventListener('message', async e => {
     if (mode === 'no-idtoken') return;                        // 応答しない
     if (mode === 'slow') await wait(4000);
     if (mode === 'error') { post({ type: 'iz:error', requestId: data.requestId, message: '未ログインです' }); return; }
-    // 正常系: 本物のIDトークンは用意できないのでダミーを返す
-    // (サーバー側で署名検証に失敗する = 検証が働いていることの確認になる)
-    post({ type: 'iz:idToken', requestId: data.requestId, idToken: 'dummy.dummy.dummy' });
+
+    // 本物のIDトークンは用意できないので、形だけ本物に似せたトークンを返す。
+    // 署名は通らないが、aud/iss の判定や画面表示の確認はこれで行える。
+    const b64u = o => btoa(unescape(encodeURIComponent(JSON.stringify(o)))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const project = mode === 'wrong-project' ? 'iz-app-staging' : 'iz-app-6e1d5';
+    const now = Math.floor(Date.now() / 1000);
+    const token = [
+      b64u({ alg: 'RS256', kid: 'sim' }),
+      b64u({ aud: project, iss: `https://securetoken.google.com/${project}`, sub: 'sim-uid', exp: now + 3600, iat: now }),
+      'signature',
+    ].join('.');
+    post({ type: 'iz:idToken', requestId: data.requestId, idToken: token });
   }
 });
 
