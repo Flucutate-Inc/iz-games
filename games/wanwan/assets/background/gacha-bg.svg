@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ガチャ画面の背景(コードで描いた版)。
+  夜のカプセルトイ売り場をイメージし、左右にカプセル機のボケ、上下に光だまりを置く。
+  中央はUI(タイトル・ガチャ機・ボタン)が乗るため意図的に暗く空けている。
+  Gemini で生成した gacha-bg.png があればそちらが優先される(style.css 参照)。
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 1280" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="room" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2a2150"/>
+      <stop offset="55%" stop-color="#1b1630"/>
+      <stop offset="100%" stop-color="#0f0c1e"/>
+    </linearGradient>
+    <radialGradient id="lampA" cx="50%" cy="50%">
+      <stop offset="0%" stop-color="#ffb020" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#ffb020" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="lampB" cx="50%" cy="50%">
+      <stop offset="0%" stop-color="#b06bff" stop-opacity="0.4"/>
+      <stop offset="100%" stop-color="#b06bff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="floor" cx="50%" cy="100%">
+      <stop offset="0%" stop-color="#ff7a1a" stop-opacity="0.22"/>
+      <stop offset="100%" stop-color="#ff7a1a" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="soft" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="18"/>
+    </filter>
+    <filter id="softer" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="34"/>
+    </filter>
+  </defs>
+
+  <rect width="720" height="1280" fill="url(#room)"/>
+
+  <!-- 天井のライト -->
+  <ellipse cx="360" cy="70" rx="360" ry="150" fill="url(#lampA)"/>
+  <ellipse cx="120" cy="240" rx="200" ry="180" fill="url(#lampB)"/>
+  <ellipse cx="610" cy="300" rx="190" ry="170" fill="url(#lampB)"/>
+
+  <!-- 左右のカプセル機(ボケ) -->
+  <g filter="url(#soft)" opacity="0.85">
+    <!-- 左列 -->
+    <rect x="-30" y="430" width="150" height="210" rx="26" fill="#3a2f63"/>
+    <circle cx="45" cy="470" r="62" fill="#4a3f7a"/>
+    <rect x="-30" y="660" width="150" height="210" rx="26" fill="#332a56"/>
+    <circle cx="45" cy="700" r="62" fill="#443a70"/>
+    <rect x="-30" y="890" width="150" height="210" rx="26" fill="#2c2449"/>
+    <circle cx="45" cy="930" r="62" fill="#3d3465"/>
+    <!-- 右列 -->
+    <rect x="600" y="470" width="150" height="210" rx="26" fill="#3a2f63"/>
+    <circle cx="675" cy="510" r="62" fill="#4a3f7a"/>
+    <rect x="600" y="700" width="150" height="210" rx="26" fill="#332a56"/>
+    <circle cx="675" cy="740" r="62" fill="#443a70"/>
+    <rect x="600" y="930" width="150" height="210" rx="26" fill="#2c2449"/>
+    <circle cx="675" cy="970" r="62" fill="#3d3465"/>
+  </g>
+
+  <!-- カプセル(ボケ玉) -->
+  <g filter="url(#softer)" opacity="0.55">
+    <circle cx="70" cy="500" r="16" fill="#ff8f8f"/>
+    <circle cx="20" cy="520" r="13" fill="#8fd0ff"/>
+    <circle cx="60" cy="735" r="15" fill="#a0f0c0"/>
+    <circle cx="18" cy="760" r="12" fill="#ffe08a"/>
+    <circle cx="66" cy="965" r="15" fill="#d0a8ff"/>
+    <circle cx="655" cy="545" r="15" fill="#ffe08a"/>
+    <circle cx="700" cy="565" r="12" fill="#ff8f8f"/>
+    <circle cx="662" cy="775" r="16" fill="#8fd0ff"/>
+    <circle cx="706" cy="800" r="12" fill="#a0f0c0"/>
+    <circle cx="668" cy="1005" r="14" fill="#d0a8ff"/>
+  </g>
+
+  <!-- 床の光だまり -->
+  <ellipse cx="360" cy="1240" rx="420" ry="200" fill="url(#floor)"/>
+
+  <!-- ほこり・きらめき -->
+  <g fill="#fff">
+    <circle cx="140" cy="330" r="2" opacity="0.5"/>
+    <circle cx="250" cy="220" r="1.6" opacity="0.35"/>
+    <circle cx="470" cy="270" r="2.2" opacity="0.45"/>
+    <circle cx="560" cy="180" r="1.4" opacity="0.3"/>
+    <circle cx="330" cy="410" r="1.8" opacity="0.3"/>
+    <circle cx="600" cy="420" r="2" opacity="0.35"/>
+    <circle cx="100" cy="1120" r="2" opacity="0.3"/>
+    <circle cx="620" cy="1150" r="1.8" opacity="0.28"/>
+  </g>
+
+  <!-- 周辺減光 -->
+  <rect width="720" height="1280" fill="url(#room)" opacity="0.15"/>
+</svg>

@@ -436,7 +436,10 @@ label { display: flex; flex-direction: column; gap: var(--s1); font-size: var(--
 }
 .gacha-screen::before {
   content: ''; position: absolute; inset: 0; z-index: 0; pointer-events: none;
-  background: url('/assets/background/gacha-bg.png') center / cover no-repeat;
+  /* 生成画像(png)が無い場合はコードで描いた svg が下敷きとして見える */
+  background:
+    url('/assets/background/gacha-bg.png') center / cover no-repeat,
+    url('/assets/background/gacha-bg.svg') center / cover no-repeat;
   /* 中央のUIを読みやすくするため、周辺だけ見せて中央は落とす */
   -webkit-mask-image: radial-gradient(70% 45% at 50% 45%, transparent 35%, #000 78%);
   mask-image: radial-gradient(70% 45% at 50% 45%, transparent 35%, #000 78%);

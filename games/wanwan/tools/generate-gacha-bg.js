@@ -37,7 +37,14 @@ occasional soft pastel capsule colors (pink, mint, sky blue, lilac).
 
 Do not include any text, watermark, UI element, button, or human figure.`;
 
+/**
+ * Vertex AI 用のアクセストークン。
+ * GCP_ACCESS_TOKEN が渡されていればそれを使う(サービスアカウントで
+ * `gcloud auth print-access-token --account=<SA>` した結果を渡す運用)。
+ * 無ければ ADC から取得する。
+ */
 async function getVertexToken() {
+  if (process.env.GCP_ACCESS_TOKEN) return process.env.GCP_ACCESS_TOKEN;
   const { GoogleAuth } = require('google-auth-library');
   const auth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/cloud-platform'] });
   const client = await auth.getClient();
