@@ -612,17 +612,25 @@ console.log('admin bootstrap tests:');
   delete require.cache[require.resolve('../src/receipt')];
   const receipts = require('../src/receipt');
 
+  // 現行形式: 署名対象に coins を含めない(交換レートはゲーム側の持ち物)
   const sign = (payload, secret = 'test-secret') => {
+    const body = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
+    const canonical = [payload.gameId, payload.uid, payload.izAmount, payload.nonce, payload.issuedAt].join('|');
+    const sig = crypto.createHmac('sha256', secret).update(canonical).digest('base64url');
+    return `${body}.${sig}`;
+  };
+  // 旧形式: IZ 側が算出した coins を含み、署名対象にも入っていた
+  const signLegacy = (payload, secret = 'test-secret') => {
     const body = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
     const canonical = [payload.gameId, payload.uid, payload.izAmount, payload.coins, payload.nonce, payload.issuedAt].join('|');
     const sig = crypto.createHmac('sha256', secret).update(canonical).digest('base64url');
     return `${body}.${sig}`;
   };
-  const goodReceipt = { gameId: 'wanwan', uid: 'uid1', izAmount: 10, coins: 100, nonce: 'n1', issuedAt: Date.now() };
+  const goodReceipt = { gameId: 'wanwan', uid: 'uid1', izAmount: 10, nonce: 'n1', issuedAt: Date.now() };
 
   await atest('正しいレシートを受理する', () => {
     const r = receipts.verifyReceipt(sign(goodReceipt));
-    assert.equal(r.coins, 100);
+    assert.equal(r.izAmount, 10);
     assert.equal(r.uid, 'uid1');
   });
   await atest('署名を偽造したレシートを拒否', () => rejectsSync(() => receipts.verifyReceipt(sign(goodReceipt, 'wrong-secret'))));
@@ -630,13 +638,48 @@ console.log('admin bootstrap tests:');
     const token = sign(goodReceipt);
     const [body, sig] = token.split('.');
     const tampered = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
-    tampered.coins = 999999;
+    tampered.izAmount = 999999;
     const forged = `${Buffer.from(JSON.stringify(tampered), 'utf8').toString('base64url')}.${sig}`;
     rejectsSync(() => receipts.verifyReceipt(forged));
   });
   await atest('別ゲーム・期限切れを拒否', () => {
     rejectsSync(() => receipts.verifyReceipt(sign({ ...goodReceipt, gameId: 'coinflip' })));
     rejectsSync(() => receipts.verifyReceipt(sign({ ...goodReceipt, issuedAt: Date.now() - 20 * 60 * 1000 })));
+  });
+
+  // 交換レートはゲーム側の持ち物。レシートは「いくら IZ を消費したか」だけを伝える。
+  await atest('付与額はゲーム側のレート(1 IZ = 1 コイン)で決まる', () => {
+    assert.equal(receipts.COINS_PER_IZ, 1);
+    assert.equal(receipts.coinsFor(10), 10);
+    assert.equal(receipts.coinsFor(1000), 1000);
+    assert.equal(receipts.coinsFor(receipts.verifyReceipt(sign(goodReceipt)).izAmount), 10);
+    // 購入パックは付与コインから IZ 価格を逆算する
+    const packs = receipts.COIN_PACKS.map(coins => ({ coins, iz: Math.ceil(coins / receipts.COINS_PER_IZ) }));
+    assert.deepEqual(packs, [{ coins: 100, iz: 100 }, { coins: 500, iz: 500 }, { coins: 1000, iz: 1000 }]);
+  });
+  await atest('izAmount が 0 以下のレシートを拒否', () => {
+    rejectsSync(() => receipts.verifyReceipt(sign({ ...goodReceipt, izAmount: 0 })));
+    rejectsSync(() => receipts.verifyReceipt(sign({ ...goodReceipt, izAmount: -10 })));
+  });
+
+  // 形式の切り替え中(ゲーム側が先・IZ側がまだ旧形式)でも IZ だけ減る事故を起こさない。
+  // IZ 側のデプロイ完了後、receipt.js の旧形式分岐ごとこのテストを消す。
+  await atest('移行中は coins つきの旧形式レシートも受理する', () => {
+    const legacy = { ...goodReceipt, coins: 100, nonce: 'legacy1' };
+    const r = receipts.verifyReceipt(signLegacy(legacy));
+    assert.equal(r.izAmount, 10);
+    // 付与額は旧形式の coins(100) ではなく、ゲーム側のレート(10)で決まる
+    assert.equal(receipts.coinsFor(r.izAmount), 10);
+  });
+  await atest('旧形式でも coins の改ざんは拒否する', () => {
+    const legacy = { ...goodReceipt, coins: 100, nonce: 'legacy2' };
+    const [body, sig] = signLegacy(legacy).split('.');
+    const tampered = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
+    tampered.coins = 999999;
+    rejectsSync(() => receipts.verifyReceipt(`${Buffer.from(JSON.stringify(tampered), 'utf8').toString('base64url')}.${sig}`));
+    // coins を落として新形式に見せかけても、署名対象が変わるので通らない
+    delete tampered.coins;
+    rejectsSync(() => receipts.verifyReceipt(`${Buffer.from(JSON.stringify(tampered), 'utf8').toString('base64url')}.${sig}`));
   });
 
   // 鍵の入れ替え中は「IZ側は新鍵・ゲーム側は旧鍵」の隙間でIZだけ減る事故が起きるため、
@@ -656,15 +699,15 @@ console.log('admin bootstrap tests:');
       delete require.cache[require.resolve('../src/receipt')];
       const rotating = require('../src/receipt');
 
-      assert.equal(rotating.verifyReceipt(sign(goodReceipt, 'new-secret')).coins, 100, '新鍵');
-      assert.equal(rotating.verifyReceipt(sign(goodReceipt, 'test-secret')).coins, 100, '旧鍵');
+      assert.equal(rotating.verifyReceipt(sign(goodReceipt, 'new-secret')).izAmount, 10, '新鍵');
+      assert.equal(rotating.verifyReceipt(sign(goodReceipt, 'test-secret')).izAmount, 10, '旧鍵');
       rejectsSync(() => rotating.verifyReceipt(sign(goodReceipt, 'unrelated-secret')));
 
       // 旧鍵を外すと旧鍵の署名は通らなくなる(入れ替え完了後)
       delete process.env.WANWAN_RECEIPT_SECRET_OLD;
       delete require.cache[require.resolve('../src/receipt')];
       const rotated = require('../src/receipt');
-      assert.equal(rotated.verifyReceipt(sign(goodReceipt, 'new-secret')).coins, 100);
+      assert.equal(rotated.verifyReceipt(sign(goodReceipt, 'new-secret')).izAmount, 10);
       rejectsSync(() => rotated.verifyReceipt(sign(goodReceipt, 'test-secret')));
     } finally {
       restoreEnv('WANWAN_RECEIPT_SECRET', savedCurrent);

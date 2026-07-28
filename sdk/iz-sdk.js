@@ -95,7 +95,7 @@
         var pp = pending[data.requestId];
         if (pp) {
           delete pending[data.requestId];
-          pp.resolve({ receipt: data.receipt, coins: data.coins, izAmount: data.izAmount, balance: data.balance });
+          pp.resolve({ receipt: data.receipt, izAmount: data.izAmount, balance: data.balance });
         }
         break;
       }
@@ -172,8 +172,11 @@
     },
     /**
      * IZ を消費してゲーム内通貨を購入する（独自サーバーを持つゲーム用）。
-     * 解決値は { receipt, coins, izAmount, balance }。receipt はゲームサーバーで
+     * 解決値は { receipt, izAmount, balance }。receipt はゲームサーバーで
      * 署名検証してから通貨を付与すること（ゲーム側では IZ を増やせない）。
+     *
+     * ホストが決めるのは「IZ をいくら減らすか」だけ。消費した IZ からゲーム内通貨を
+     * いくら付与するか（交換レート）はゲーム側の裁量で、IZ は関知しない。
      */
     purchase: function (izAmount) {
       return request({ type: 'iz:purchase', izAmount: Math.max(1, Math.floor(Number(izAmount) || 0)) });
