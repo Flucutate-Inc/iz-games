@@ -53,6 +53,7 @@ const Battle = (() => {
   let running = false;
   let onEnd = null;
   let handSig = ''; // 手札DOMの再構築判定(毎フレーム作り直すとクリックが失われる)
+  let handSlots = []; // カードの並び(デッキ全体をコスト順に固定。試合中は変わらない)
   let upgradeSig = ''; // 強化ボタンDOMの再構築判定
 
   // カメラ。T = containFit * cam.s がワールド→画面ピクセルの倍率。
@@ -121,6 +122,7 @@ const Battle = (() => {
     projectiles = [];
     displayPos = {};
     handSig = '';
+    handSlots = computeHandSlots();
     upgradeSig = '';
     setMapMode(false);
     setDefaultCamera(); // 自陣側にズームインした状態で開始
@@ -144,6 +146,8 @@ const Battle = (() => {
     petsById = Object.fromEntries(snap.pets.map(p => [p.id, p]));
     Net.syncSeq(snap.lastSeq);
     state = snap.state;
+    handSlots = computeHandSlots(); // 再接続後も並びは同じ(コスト順)
+    handSig = '';
     renderHUD();
   }
 
@@ -453,18 +457,41 @@ const Battle = (() => {
   }
 
   /**
-   * 手札の描画。構成(手札・CD・選択・出撃可否)が変わったときだけDOMを作り直す。
-   * 毎状態受信(10Hz)で innerHTML を作り直すとクリック中のノードが差し替わり、
-   * PCで「クリックしてもレーン選択にならない」バグになる(修正要望②)。
+   * カードの並び順。デッキ全体を**コストの安い順に固定**する
+   * (同コストは名前順→ID順で毎回同じ並びになるようにする)。
+   * 手札は出撃するたびに控えと入れ替わるため、手札の配列順で描くと
+   * カードの位置が動いて隣のペットを押してしまう(修正要望③)。
+   */
+  function computeHandSlots() {
+    const deck = (ctxData && ctxData.hand && ctxData.hand.deck) || [];
+    return [...deck].filter(id => petsById[id]).sort((a, b) => {
+      const pa = petsById[a];
+      const pb = petsById[b];
+      return pa.cost - pb.cost || pa.name.localeCompare(pb.name, 'ja') || (a < b ? -1 : 1);
+    });
+  }
+
+  /**
+   * 手札の描画。枠はデッキ全体・コスト順で固定し、出せない理由
+   * (クールダウン / 控え / ほね不足)を枠の上に重ねて表すため、位置は動かない。
+   * 構成が変わったときだけDOMを作り直す。毎状態受信(10Hz)で innerHTML を
+   * 作り直すとクリック中のノードが差し替わり、PCで「クリックしても
+   * レーン選択にならない」バグになる(修正要望②)。
    */
   function renderHand() {
     if (!state) return;
     const handEl = document.getElementById('hand');
-    const afford = state.hand.map(id => (state.bone >= petsById[id].cost ? '1' : '0')).join('');
-    const petUp = state.hand
-      .map(id => `${state.upgrades?.pets?.[id] || 0}:${state.petUpgradeCosts?.[id] ?? 'x'}:${state.bone >= (state.petUpgradeCosts?.[id] ?? Infinity) ? 1 : 0}`)
-      .join(',');
-    const sig = `${state.hand.join(',')}|${Object.keys(state.cooldowns).join(',')}|${afford}|${selectedPet}|${petUp}|${mapMode}`;
+    const slotState = petId => {
+      const inHand = state.hand.includes(petId);
+      const cd = state.cooldowns[petId];
+      return { inHand, cd, affordable: inHand && state.bone >= petsById[petId].cost };
+    };
+    const sig = handSlots.map(id => {
+      const s = slotState(id);
+      const upCost = state.petUpgradeCosts?.[id] ?? 'x';
+      return `${id}:${s.inHand ? 'h' : s.cd != null ? 'c' : 'r'}${s.affordable ? 1 : 0}`
+        + `:${state.upgrades?.pets?.[id] || 0}:${upCost}:${state.bone >= (upCost === 'x' ? Infinity : upCost) ? 1 : 0}`;
+    }).join(',') + `|${selectedPet}|${mapMode}`;
     if (sig === handSig) {
       // CDの残り秒数だけその場で更新
       handEl.querySelectorAll('[data-cdpet]').forEach(el => {
@@ -474,29 +501,30 @@ const Battle = (() => {
       return;
     }
     handSig = sig;
+    // 8体デッキでは横スクロールになる。作り直しで先頭へ戻ると
+    // 「位置が動く」のと同じ体験になるため、スクロール位置は保つ
+    const scrollLeft = handEl.scrollLeft;
     handEl.innerHTML = '';
-    for (const petId of state.hand) {
+    for (const petId of handSlots) {
       const pet = petsById[petId];
-      const affordable = state.bone >= pet.cost;
+      const { inHand, cd, affordable } = slotState(petId);
       const card = document.createElement('div');
       card.className = 'hand-card' + (affordable ? '' : ' disabled') + (selectedPet === petId ? ' selected' : '');
-      card.dataset.pet = petId;
+      if (inHand) card.dataset.pet = petId; // 出撃できるのは手札にあるカードだけ
       const lv = state.upgrades?.pets?.[petId] || 0;
       const upCost = state.petUpgradeCosts?.[petId];
+      // クールダウン中は残り秒、控えは「控え」を重ねる(枠自体は消さない)
+      const mask = cd != null ? `<div class="cdmask" data-cdpet="${petId}">${Math.ceil(cd)}</div>`
+        : !inHand ? '<div class="cdmask wait">控え</div>' : '';
       card.innerHTML = `<span class="pcost">${pet.cost}</span>
         ${lv > 0 ? `<span class="plv">Lv${lv}</span>` : ''}
         <img src="/assets/pets/${petId}/icon.png" alt="${esc(pet.name)}" draggable="false">
         <small>${esc(pet.name)}</small>
+        ${mask}
         <button class="pet-up" data-uppet="${petId}" ${upCost == null || state.bone < upCost || mapMode ? 'disabled' : ''}>${upCost == null ? 'MAX' : `強化 🦴${upCost}`}</button>`;
       handEl.appendChild(card);
     }
-    for (const [petId, cd] of Object.entries(state.cooldowns)) {
-      const pet = petsById[petId];
-      const card = document.createElement('div');
-      card.className = 'hand-card disabled';
-      card.innerHTML = `<span class="pcost">${pet.cost}</span><img src="/assets/pets/${petId}/icon.png" draggable="false"><div class="cdmask" data-cdpet="${petId}">${Math.ceil(cd)}</div>`;
-      handEl.appendChild(card);
-    }
+    handEl.scrollLeft = scrollLeft;
   }
 
   /**
@@ -654,12 +682,12 @@ const Battle = (() => {
     const lane = e.target.dataset.lane;
     if (lane) trySpawn(lane);
   });
-  // キーボード: 1〜4で選択、W/↑=上、S/↓=下
+  // キーボード: 1〜8(画面のカードと同じコスト順)で選択、W/↑=上、S/↓=下
   document.addEventListener('keydown', e => {
     if (!running || !state || mapMode) return;
-    if (['1', '2', '3', '4'].includes(e.key)) {
-      const petId = state.hand[Number(e.key) - 1];
-      if (petId && state.bone >= petsById[petId].cost) {
+    if (/^[1-8]$/.test(e.key)) {
+      const petId = handSlots[Number(e.key) - 1];
+      if (petId && state.hand.includes(petId) && state.bone >= petsById[petId].cost) {
         selectedPet = petId;
         document.getElementById('b-lane-hint').classList.remove('hidden');
         renderHUD();
