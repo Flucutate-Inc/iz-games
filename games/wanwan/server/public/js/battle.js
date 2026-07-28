@@ -472,8 +472,11 @@ const Battle = (() => {
   }
 
   /**
-   * 手札の描画。枠はデッキ全体・コスト順で固定し、出せない理由
-   * (クールダウン / 控え / ほね不足)を枠の上に重ねて表すため、位置は動かない。
+   * 手札の描画。枠はデッキ全体・コスト順で固定するため位置は動かない。
+   * 出せない理由の表し方は2通りに分ける:
+   *  - クールダウン(残り秒) / 控え … 枠にマスクを重ねる(いつ出せるかが分からないため明示する)
+   *  - ほね不足 … カードを淡色化するだけ(.disabled)。ほねは数秒ごとに増減するので、
+   *    文字マスクを出すと常に点滅してわんこの絵が隠れる。コストバッジと淡色化で足りる
    * 構成が変わったときだけDOMを作り直す。毎状態受信(10Hz)で innerHTML を
    * 作り直すとクリック中のノードが差し替わり、PCで「クリックしても
    * レーン選択にならない」バグになる(修正要望②)。
@@ -513,7 +516,8 @@ const Battle = (() => {
       if (inHand) card.dataset.pet = petId; // 出撃できるのは手札にあるカードだけ
       const lv = state.upgrades?.pets?.[petId] || 0;
       const upCost = state.petUpgradeCosts?.[petId];
-      // クールダウン中は残り秒、控えは「控え」を重ねる(枠自体は消さない)
+      // クールダウン中は残り秒、控えは「控え」を重ねる(枠自体は消さない)。
+      // ほね不足は上記のとおりマスクではなく淡色化(.disabled)で表す
       const mask = cd != null ? `<div class="cdmask" data-cdpet="${petId}">${Math.ceil(cd)}</div>`
         : !inHand ? '<div class="cdmask wait">控え</div>' : '';
       card.innerHTML = `<span class="pcost">${pet.cost}</span>

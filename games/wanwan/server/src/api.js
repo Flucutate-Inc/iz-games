@@ -284,10 +284,16 @@ router.post('/purchase', requireAuth, (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-/** IZ課金が利用可能かどうかと、交換レート・購入パック(クライアントの表示用) */
+/**
+ * IZ課金が利用可能かどうかと、交換レート・購入パック(クライアントの表示用)。
+ * 買えない理由は2種類あり(サーバー側で無効 / IZアカウントでログインしていない)、
+ * 案内文が変わるため reason で区別して返す。
+ */
 router.get('/purchase/status', requireAuth, (req, res) => {
+  const available = receipts.isEnabled();
   res.json({
-    enabled: receipts.isEnabled() && !!req.user.firebase_uid,
+    enabled: available && !!req.user.firebase_uid,
+    reason: !available ? 'unavailable' : !req.user.firebase_uid ? 'not_iz_account' : 'ok',
     coinsPerIz: receipts.COINS_PER_IZ,
     packs: receipts.COIN_PACKS.map(coins => ({ coins, iz: Math.ceil(coins / receipts.COINS_PER_IZ) })),
   });

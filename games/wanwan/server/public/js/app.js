@@ -130,11 +130,13 @@
     const rate = izStatus?.coinsPerIz ?? 1;
     $('iz-rate').innerHTML = `IZ を使ってコインを購入できます(1 IZ = ${rate}${COIN})。コインはガチャに使えます。`;
 
-    // 購入できるのは IZアプリ内 + IZアカウントでログイン済みのときだけ
+    // 購入できるのは IZアプリ内 + IZアカウントでログイン済み + サーバー側が有効のときだけ。
+    // 買えない理由はサーバーの reason で区別する(原因を決めつけた案内をしないため)
     const reason = !izStatus ? '購入設定を取得できませんでした。'
       : !izEmbedded() || !window.IZ ? 'IZアプリの中でこのゲームを開くと、IZ でコインを購入できます。'
-        : !izStatus.enabled ? 'いまはコインを購入できません(IZアカウントでのログインが必要です)。'
-          : '';
+        : izStatus.enabled ? ''
+          : izStatus.reason === 'not_iz_account' ? 'IZアカウントでログインすると、IZ でコインを購入できます。'
+            : 'いまはコインを購入できません。しばらくしてから再度お試しください。';
     note.textContent = reason;
     note.classList.toggle('hidden', !reason);
     packs.classList.toggle('hidden', !!reason);

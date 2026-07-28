@@ -170,6 +170,20 @@ class Client {
   c1.close();
   c2b.close();
 
+  // IZ課金: 買えないときの理由を区別して返す(クライアントの案内文が変わるため)。
+  // 表示名+パスワードで登録したユーザーは firebase_uid を持たない
+  const pstatus = await api('/purchase/status', { token: u1.token });
+  ok(pstatus.enabled === false, 'PURCHASE: IZアカウント以外では購入できない');
+  ok(
+    pstatus.reason === (process.env.WANWAN_RECEIPT_SECRET ? 'not_iz_account' : 'unavailable'),
+    `PURCHASE: 買えない理由を返す(${pstatus.reason})`,
+  );
+  ok(pstatus.coinsPerIz === 1, 'PURCHASE: 交換レートは 1 IZ = 1 コイン');
+  ok(
+    Array.isArray(pstatus.packs) && pstatus.packs.every(p => p.iz === p.coins),
+    'PURCHASE: 購入パックの IZ 価格はレートから逆算される',
+  );
+
   // GACHA-01: 解放APIは廃止され、ペット入手はガチャのみ
   const removed = await api('/pets/great-dane-king/unlock', { token: u1.token, body: {} });
   ok(removed.status === 404, 'GACHA-01: 解放API(/pets/:id/unlock)は存在しない');
