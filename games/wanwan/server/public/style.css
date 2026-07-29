@@ -863,7 +863,6 @@ label { display: flex; flex-direction: column; gap: var(--s1); font-size: var(--
 .pet-up:disabled { opacity: 0.4; color: var(--text-3); cursor: default; }
 
 .battle-side { display: flex; align-items: center; gap: var(--s3); }
-.next-pet { font-size: 11px; color: var(--text-3); }
 .battle-side .btn { margin-left: auto; }
 
 /* 結果 */

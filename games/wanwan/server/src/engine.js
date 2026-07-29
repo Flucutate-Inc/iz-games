@@ -35,8 +35,10 @@ function createBattle({ snapshot, decks, seed }) {
       const j = Math.floor(rng() * (i + 1));
       [order[i], order[j]] = [order[j], order[i]];
     }
-    const hand = order.slice(0, rules.hand.size);
-    const reserve = order.slice(rules.hand.size);
+    // 控え(手札ローテーション)は廃止: デッキ全ペットが常時手札に並ぶ。
+    // reserve フィールドはクライアント互換のため空配列のまま残す。
+    const hand = order;
+    const reserve = [];
     return {
       deck: [...deck],
       hand,
@@ -203,10 +205,9 @@ function spawn(state, side, petId, lane) {
   if (laneCount + addCount > caps.perLane) return { error: 'このレーンは出撃上限です' };
 
   player.bone -= pet.cost;
-  // 手札から除去 → 個別クールダウン開始 → 控え先頭から補充(設計書 5.1)
+  // 手札から除去 → 個別クールダウン開始(控え廃止のため補充はなし。CD明けに直接手札へ戻る)
   player.hand.splice(player.hand.indexOf(petId), 1);
   player.cooldowns[petId] = pet.rechargeSec;
-  if (player.reserve.length > 0) player.hand.push(player.reserve.shift());
 
   state.pendingSpawns.push({ owner: side, petId, lane, remain: pet.spawnDelay, x: SPAWN_X[side] });
   emit(state, 'spawn_pending', { side, petId, lane, delay: pet.spawnDelay });
@@ -242,14 +243,13 @@ function tick(state, dt) {
     p.bone = Math.min(boneMax(state, side), p.bone + dt * boneRegenPerSec(state, side) * regenMult);
   }
 
-  // 個別クールダウン(終了後は控え末尾へ。控えが空=4体デッキ等なら直接手札へ)
+  // 個別クールダウン(終了後は手札へ直接復帰。控えは廃止)
   for (const p of state.players) {
     for (const [petId, remain] of Object.entries(p.cooldowns)) {
       const next = remain - dt;
       if (next <= 0) {
         delete p.cooldowns[petId];
-        if (p.hand.length < rules.hand.size && p.reserve.length === 0) p.hand.push(petId);
-        else p.reserve.push(petId);
+        p.hand.push(petId);
       } else {
         p.cooldowns[petId] = next;
       }

@@ -447,7 +447,6 @@ const Battle = (() => {
     renderHand();
 
     renderUpgrades();
-    document.getElementById('next-pet').innerHTML = `控え: ${state.reserveCount}体`;
 
     // 相手の通信状態
     const oppConnected = state.connection[1 - mySide];
