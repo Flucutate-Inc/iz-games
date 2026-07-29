@@ -39,10 +39,11 @@ function run(state, seconds) {
 
 console.log('engine tests:');
 
-test('初期状態: ほね4・手札4・施設HP', () => {
+test('初期状態: ほね4・手札=デッキ全体(控え廃止)・施設HP', () => {
   const s = newBattle();
   assert.equal(s.players[0].bone, 4);
-  assert.equal(s.players[0].hand.length, 4);
+  assert.equal(s.players[0].hand.length, DECK6.length, 'デッキ全ペットが手札に並ぶ');
+  assert.equal(s.players[0].reserve.length, 0, '控えは存在しない');
   assert.equal(s.players[0].facilities.main.hp, 12000);
 });
 
@@ -76,21 +77,23 @@ test('検証: 手札外・ほね不足・不正レーンを拒否', () => {
   assert.ok(engine.spawn(s, 0, s.players[0].hand[0], 'middle').error);
 });
 
-test('手札循環: 使用→CD→控え末尾/4体デッキは直接手札へ(HAND-01)', () => {
+test('手札循環: 使用→個別CD→手札へ直接復帰(控え廃止)(HAND-01)', () => {
   const s = newBattle(DECK4, DECK6);
   const petId = s.players[0].hand[0];
   engine.spawn(s, 0, petId, 'top');
-  assert.equal(s.players[0].hand.length, 3); // 控えなし → 補充なし
+  assert.equal(s.players[0].hand.length, 3); // 出撃分だけ手札から抜ける
   assert.ok(s.players[0].cooldowns[petId] > 0);
   run(s, s.petsById[petId].rechargeSec + 0.2);
-  assert.ok(s.players[0].hand.includes(petId), '4体デッキはCD後に手札へ直接復帰');
+  assert.ok(s.players[0].hand.includes(petId), 'CD後に手札へ直接復帰');
 
   const s6 = newBattle(DECK6, DECK6);
   const p6 = s6.players[0].hand[0];
   engine.spawn(s6, 0, p6, 'top');
-  assert.equal(s6.players[0].hand.length, 4, '控えから補充');
+  assert.equal(s6.players[0].hand.length, 5, '控えからの補充は行われない');
+  assert.equal(s6.players[0].reserve.length, 0, '控えは常に空');
   run(s6, s6.petsById[p6].rechargeSec + 0.2);
-  assert.ok(s6.players[0].reserve.includes(p6), '6体デッキはCD後に控え末尾へ');
+  assert.ok(s6.players[0].hand.includes(p6), '6体デッキでもCD後に手札へ直接復帰');
+  assert.equal(s6.players[0].reserve.length, 0, 'CD後も控えには入らない');
 });
 
 test('戦闘: ユニット同士が交戦して死亡する', () => {
