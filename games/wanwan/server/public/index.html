@@ -48,17 +48,6 @@
       <div id="home-deck-summary" class="deck-summary"></div>
     </div>
 
-    <div class="panel iz-panel hidden" id="iz-shop">
-      <div class="panel-head"><span class="panel-title"><i class="coin"></i> コインを購入</span></div>
-      <p class="terms">IZ を使ってコインを購入できます。コインはガチャに使えます。</p>
-      <div class="iz-row">
-        <button class="btn iz-buy" data-iz="10">10 IZ<small>→ 100<i class="coin"></i></small></button>
-        <button class="btn iz-buy" data-iz="50">50 IZ<small>→ 500<i class="coin"></i></small></button>
-        <button class="btn iz-buy" data-iz="100">100 IZ<small>→ 1000<i class="coin"></i></small></button>
-      </div>
-      <p id="iz-msg" class="error"></p>
-    </div>
-
     <div class="home-spacer"></div>
 
     <button id="btn-start" class="start-btn">たたかう</button>
@@ -79,9 +68,11 @@
 
 <!-- 対戦モード選択 -->
 <section id="screen-modes" class="screen hidden home-screen">
-  <header class="home-head">
-    <button class="btn back" data-nav="home">← もどる</button>
-    <h2 class="mode-title">たたかう</h2>
+  <!-- ヘッダーは全画面共通(戻る / タイトル / コイン)。コインをタップすると購入モーダルが開く -->
+  <header class="appbar">
+    <button class="btn back small" data-nav="home">← もどる</button>
+    <h2>たたかう</h2>
+    <button class="coin-chip shop" data-shop type="button"><i class="coin"></i><span data-coin>0</span><span class="chip-plus">＋</span></button>
   </header>
   <div class="mode-list">
     <button id="btn-random-match" class="mode-btn primary">
@@ -102,9 +93,10 @@
 
 <!-- ルームマッチ -->
 <section id="screen-room" class="screen hidden home-screen">
-  <header class="home-head">
-    <button class="btn back" data-nav="modes">← もどる</button>
-    <h2 class="mode-title">ルームマッチ</h2>
+  <header class="appbar">
+    <button class="btn back small" data-nav="modes">← もどる</button>
+    <h2>ルームマッチ</h2>
+    <button class="coin-chip shop" data-shop type="button"><i class="coin"></i><span data-coin>0</span><span class="chip-plus">＋</span></button>
   </header>
   <div class="mode-list">
     <div class="panel">
@@ -125,7 +117,8 @@
 
 <!-- デッキ編成 -->
 <section id="screen-deck" class="screen hidden">
-  <header class="appbar"><button class="btn back" data-nav="home">← ホーム</button><h2>デッキ編成</h2></header>
+  <header class="appbar"><button class="btn back small" data-nav="home">← ホーム</button><h2>デッキ編成</h2>
+    <button class="coin-chip shop" data-shop type="button"><i class="coin"></i><span data-coin>0</span><span class="chip-plus">＋</span></button></header>
   <div class="deck-editor">
     <div class="card">
       <div class="deck-head">
@@ -150,7 +143,8 @@
 
 <!-- 図鑑 -->
 <section id="screen-dex" class="screen hidden">
-  <header class="appbar"><button class="btn back" data-nav="home">← ホーム</button><h2>📖 図鑑</h2></header>
+  <header class="appbar"><button class="btn back small" data-nav="home">← ホーム</button><h2>📖 図鑑</h2>
+    <button class="coin-chip shop" data-shop type="button"><i class="coin"></i><span data-coin>0</span><span class="chip-plus">＋</span></button></header>
   <div class="dex-tabs">
     <button class="tab active" data-dextab="pets">ペット</button>
     <button class="tab" data-dextab="facilities">建物</button>
@@ -166,7 +160,7 @@
 <section id="screen-gacha" class="screen hidden gacha-screen">
   <header class="gacha-head">
     <button class="btn back small" data-nav="home">← もどる</button>
-    <span id="gacha-coins" class="coin-chip"></span>
+    <button class="coin-chip shop" data-shop type="button"><i class="coin"></i><span data-coin>0</span><span class="chip-plus">＋</span></button>
   </header>
 
   <div class="gacha-stage">
@@ -217,19 +211,22 @@
 
 <!-- ランキング -->
 <section id="screen-ranking" class="screen hidden">
-  <header class="appbar"><button class="btn back" data-nav="home">← ホーム</button><h2>🏆 ランキング</h2></header>
+  <header class="appbar"><button class="btn back small" data-nav="home">← ホーム</button><h2>🏆 ランキング</h2>
+    <button class="coin-chip shop" data-shop type="button"><i class="coin"></i><span data-coin>0</span><span class="chip-plus">＋</span></button></header>
   <div id="ranking-list" class="history-list"></div>
 </section>
 
 <!-- 履歴 -->
 <section id="screen-history" class="screen hidden">
-  <header class="appbar"><button class="btn back" data-nav="home">← ホーム</button><h2>対戦履歴</h2></header>
+  <header class="appbar"><button class="btn back small" data-nav="home">← ホーム</button><h2>対戦履歴</h2>
+    <button class="coin-chip shop" data-shop type="button"><i class="coin"></i><span data-coin>0</span><span class="chip-plus">＋</span></button></header>
   <div id="history-list" class="history-list"></div>
 </section>
 
 <!-- 設定 -->
 <section id="screen-settings" class="screen hidden">
-  <header class="appbar"><button class="btn back" data-nav="home">← ホーム</button><h2>設定</h2></header>
+  <header class="appbar"><button class="btn back small" data-nav="home">← ホーム</button><h2>設定</h2>
+    <button class="coin-chip shop" data-shop type="button"><i class="coin"></i><span data-coin>0</span><span class="chip-plus">＋</span></button></header>
   <div class="card settings">
     <div id="settings-info"></div>
     <button id="btn-logout" class="btn">ログアウト</button>
@@ -269,6 +266,18 @@
   </div>
   <div id="result-overlay" class="modal hidden"><div class="card modal-card" id="result-body"></div></div>
 </section>
+
+<!-- コイン購入(IZ課金)。どの画面のコインをタップしても開く共通モーダル -->
+<div id="iz-modal" class="modal hidden">
+  <div class="card modal-card">
+    <h3><i class="coin"></i> コインを購入</h3>
+    <p class="terms" id="iz-rate">IZ を使ってコインを購入できます。コインはガチャに使えます。</p>
+    <div class="iz-row" id="iz-packs"></div>
+    <p class="terms hidden" id="iz-unavailable"></p>
+    <p id="iz-msg" class="error"></p>
+    <button class="btn" id="btn-iz-close" style="width:100%">とじる</button>
+  </div>
+</div>
 
 <script src="/sdk/iz-sdk.js"></script>
 <script src="js/net.js"></script>

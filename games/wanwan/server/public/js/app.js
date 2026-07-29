@@ -73,7 +73,7 @@
     allPets = petsRes.pets;
     decks = decksRes.decks;
     $('home-player').innerHTML =
-      `<b>${esc(me.name)}</b> Lv${me.level} <span>${COIN}${me.coins}</span> <span>⭐${me.rating}</span> <small>${me.wins}勝${me.losses}敗</small>`;
+      `<b>${esc(me.name)}</b> Lv${me.level} ${coinChipHtml(me.coins)} <span>⭐${me.rating}</span> <small>${me.wins}勝${me.losses}敗</small>`;
     const deck = decks.find(d => d.selected);
     if (deck) {
       const avg = (deck.pets.reduce((a, id) => a + (allPets.find(p => p.id === id)?.cost || 0), 0) / deck.pets.length).toFixed(1);
@@ -83,44 +83,96 @@
     } else {
       $('home-deck-summary').innerHTML = '<small>デッキがありません</small>';
     }
-    void refreshIzShop();
+    setCoins(me.coins);
   }
   const petName = id => allPets.find(p => p.id === id)?.name || id;
 
-  // ─── IZ 課金(IZアプリ内でのみ表示) ───────────────────────────
-  async function refreshIzShop() {
-    const panel = $('iz-shop');
+  // ─── コイン表示(全画面共通ヘッダー) ─────────────────────────
+  /** ヘッダー等のコインチップ。タップするとコイン購入モーダルが開く */
+  const coinChipHtml = coins =>
+    `<button class="coin-chip shop" data-shop type="button"><i class="coin"></i><span data-coin>${coins}</span><span class="chip-plus">＋</span></button>`;
+
+  /** 全画面のコイン表示をまとめて更新する(画面ごとに持たせない) */
+  function setCoins(coins) {
+    if (!Number.isFinite(coins)) return;
+    if (me) me.coins = coins;
+    document.querySelectorAll('[data-coin]').forEach(el => (el.textContent = coins));
+  }
+
+  // ─── IZ 課金(コインをタップ → 購入モーダル) ─────────────────
+  let izStatus = null;
+
+  document.addEventListener('click', e => {
+    const chip = e.target.closest ? e.target.closest('[data-shop]') : null;
+    if (chip) void openIzShop();
+  });
+  $('btn-iz-close').onclick = () => $('iz-modal').classList.add('hidden');
+  $('iz-modal').addEventListener('click', e => {
+    if (e.target === $('iz-modal')) $('iz-modal').classList.add('hidden');
+  });
+
+  async function openIzShop() {
+    $('iz-msg').textContent = '';
+    $('iz-msg').style.color = '';
+    $('iz-modal').classList.remove('hidden');
+    $('iz-packs').innerHTML = '<p class="terms">読み込み中…</p>';
     try {
-      const embedded = !!window.ReactNativeWebView || window.parent !== window;
-      if (!embedded || !window.IZ) return panel.classList.add('hidden');
-      const status = await Net.api('/purchase/status');
-      panel.classList.toggle('hidden', !status.enabled);
+      izStatus = await Net.api('/purchase/status');
     } catch {
-      panel.classList.add('hidden');
+      izStatus = null;
+    }
+    renderIzShop();
+  }
+
+  function renderIzShop() {
+    const packs = $('iz-packs');
+    const note = $('iz-unavailable');
+    const rate = izStatus?.coinsPerIz ?? 1;
+    $('iz-rate').innerHTML = `IZ を使ってコインを購入できます(1 IZ = ${rate}${COIN})。コインはガチャに使えます。`;
+
+    // 購入できるのは IZアプリ内 + IZアカウントでログイン済み + サーバー側が有効のときだけ。
+    // 買えない理由はサーバーの reason で区別する(原因を決めつけた案内をしないため)
+    const reason = !izStatus ? '購入設定を取得できませんでした。'
+      : !izEmbedded() || !window.IZ ? 'IZアプリの中でこのゲームを開くと、IZ でコインを購入できます。'
+        : izStatus.enabled ? ''
+          : izStatus.reason === 'not_iz_account' ? 'IZアカウントでログインすると、IZ でコインを購入できます。'
+            : 'いまはコインを購入できません。しばらくしてから再度お試しください。';
+    note.textContent = reason;
+    note.classList.toggle('hidden', !reason);
+    packs.classList.toggle('hidden', !!reason);
+    if (reason) return;
+
+    packs.innerHTML = '';
+    for (const pack of izStatus.packs) {
+      const btn = document.createElement('button');
+      btn.className = 'btn iz-buy';
+      btn.innerHTML = `${pack.iz} IZ<small>→ ${pack.coins}<i class="coin"></i></small>`;
+      btn.onclick = () => buyCoins(pack.iz);
+      packs.appendChild(btn);
     }
   }
 
-  document.querySelectorAll('.iz-buy').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const izAmount = Number(btn.dataset.iz);
-      $('iz-msg').textContent = '';
-      document.querySelectorAll('.iz-buy').forEach(b => (b.disabled = true));
-      try {
-        // IZ の残高移動は IZ アプリのサーバーが行い、署名済みレシートが返る
-        const purchase = await IZ.purchase(izAmount);
-        const res = await Net.api('/purchase', { body: { receipt: purchase.receipt } });
-        me = res.user;
-        $('iz-msg').style.color = 'var(--green)';
-        $('iz-msg').innerHTML = `${res.coins}${COIN} を受け取りました`;
-        await loadHome();
-      } catch (e) {
-        $('iz-msg').style.color = '';
-        $('iz-msg').textContent = e.message || '購入に失敗しました';
-      } finally {
-        document.querySelectorAll('.iz-buy').forEach(b => (b.disabled = false));
-      }
-    });
-  });
+  async function buyCoins(izAmount) {
+    $('iz-msg').textContent = '';
+    const buttons = $('iz-packs').querySelectorAll('.iz-buy');
+    buttons.forEach(b => (b.disabled = true));
+    try {
+      // IZ の残高移動は IZ アプリのサーバーが行い、署名済みレシートが返る
+      const purchase = await IZ.purchase(izAmount);
+      const res = await Net.api('/purchase', { body: { receipt: purchase.receipt } });
+      me = res.user;
+      setCoins(res.user.coins);
+      $('iz-msg').style.color = 'var(--green)';
+      $('iz-msg').innerHTML = `${res.coins}${COIN} を受け取りました`;
+      // ガチャ画面から買ったときは、引けるようになったボタンをその場で更新する
+      if (!$('screen-gacha').classList.contains('hidden')) await loadGacha();
+    } catch (e) {
+      $('iz-msg').style.color = '';
+      $('iz-msg').textContent = e.message || '購入に失敗しました';
+    } finally {
+      buttons.forEach(b => (b.disabled = false));
+    }
+  }
 
   $('btn-start').onclick = () => nav('modes');
   $('btn-room-mode').onclick = () => nav('room');
@@ -459,7 +511,7 @@
   async function loadGacha() {
     gachaInfo = await Net.api('/gacha');
     $('gacha-error').textContent = '';
-    $('gacha-coins').innerHTML = `${COIN}${gachaInfo.coins}`;
+    setCoins(gachaInfo.coins);
     const b1 = $('btn-gacha-1');
     const b10 = $('btn-gacha-10');
     b1.querySelector('small').innerHTML = `${COIN}${gachaInfo.singleCost}`;

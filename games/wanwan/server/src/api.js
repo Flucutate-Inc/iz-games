@@ -266,24 +266,37 @@ router.post('/purchase', requireAuth, (req, res, next) => {
     }
     if (receipt.uid !== req.user.firebase_uid) throw httpError(403, '他のアカウントのレシートです');
 
+    // レシートが伝えるのは消費した IZ の額だけ。付与コインはゲーム側のレートで決める
+    const coins = receipts.coinsFor(receipt.izAmount);
+
     try {
       db.transaction(() => {
         db.prepare(
           'INSERT INTO iz_purchases (nonce, user_id, firebase_uid, iz_amount, coins) VALUES (?, ?, ?, ?, ?)',
-        ).run(receipt.nonce, req.user.id, receipt.uid, receipt.izAmount, receipt.coins);
-        db.prepare('UPDATE users SET coins = coins + ? WHERE id = ?').run(receipt.coins, req.user.id);
+        ).run(receipt.nonce, req.user.id, receipt.uid, receipt.izAmount, coins);
+        db.prepare('UPDATE users SET coins = coins + ? WHERE id = ?').run(coins, req.user.id);
       })();
     } catch (e) {
       if (String(e.message).includes('UNIQUE')) throw httpError(409, 'このレシートは使用済みです');
       throw e;
     }
-    res.json({ ok: true, coins: receipt.coins, user: publicUser(req.user.id) });
+    res.json({ ok: true, coins, user: publicUser(req.user.id) });
   } catch (e) { next(e); }
 });
 
-/** IZ課金が利用可能かどうか(クライアントの表示切替用) */
+/**
+ * IZ課金が利用可能かどうかと、交換レート・購入パック(クライアントの表示用)。
+ * 買えない理由は2種類あり(サーバー側で無効 / IZアカウントでログインしていない)、
+ * 案内文が変わるため reason で区別して返す。
+ */
 router.get('/purchase/status', requireAuth, (req, res) => {
-  res.json({ enabled: receipts.isEnabled() && !!req.user.firebase_uid });
+  const available = receipts.isEnabled();
+  res.json({
+    enabled: available && !!req.user.firebase_uid,
+    reason: !available ? 'unavailable' : !req.user.firebase_uid ? 'not_iz_account' : 'ok',
+    coinsPerIz: receipts.COINS_PER_IZ,
+    packs: receipts.COIN_PACKS.map(coins => ({ coins, iz: Math.ceil(coins / receipts.COINS_PER_IZ) })),
+  });
 });
 
 /** ユーザーランキング(レート順)。自分の順位も返す。 */

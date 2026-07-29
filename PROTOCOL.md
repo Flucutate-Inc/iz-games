@@ -23,7 +23,7 @@
 | `iz:scoreAck`    | `{ requestId, best, isBest }`                                                 | 距離スコア送信の結果（自己ベスト）  |
 | `iz:leaderboard` | `{ requestId, entries:[{rank,displayName,score}] }`                          | 距離スコアの共通リーダーボード      |
 | `iz:idToken`     | `{ requestId, idToken }`                                                      | Firebase ID トークン（独自サーバー認証用） |
-| `iz:purchase`    | `{ requestId, receipt, coins, izAmount, balance }`                            | ゲーム内通貨の購入結果（署名済みレシート） |
+| `iz:purchase`    | `{ requestId, receipt, izAmount, balance }`                                   | ゲーム内通貨の購入結果（署名済みレシート） |
 | `iz:error`       | `{ requestId, code, message }`                                                | リクエスト失敗                      |
 
 ### ゲーム → ホスト
@@ -55,8 +55,22 @@ IZ を消費してゲーム内通貨を購入する。**IZ の残高移動はホ
 レシートが返る。ゲームサーバーは共有シークレットで署名を検証し、`nonce` で
 二重付与を防いだうえで通貨を付与すること。
 
+**ホストが決めるのは「IZ をいくら減らすか」だけ。** レシートが伝えるのは消費した
+IZ の額（`izAmount`）であり、それをゲーム内通貨いくらに換算するか（交換レート）は
+**ゲーム側の裁量**で、IZ は関知しない。レート変更はゲームのリポジトリだけで完結する。
+
+レシート本文（base64url）と署名対象の正規化文字列:
+
+```text
+payload  = { gameId, uid, izAmount, nonce, issuedAt }
+canonical = gameId|uid|izAmount|nonce|issuedAt
+receipt   = base64url(JSON(payload)) + "." + base64url(HMAC-SHA256(canonical, secret))
+```
+
 - ゲームは IZ を増やせない（レシートを偽造できない）という不変条件を維持する。
-- 購入対象のゲームは iz-app 側 `game-registry.ts` に `currencyPurchase` を登録する必要がある。
+- ゲームサーバーは `gameId`・`nonce`（二重付与防止）・発行からの経過時間を必ず検証すること。
+- 購入対象のゲームは iz-app 側 `game-registry.ts` に `currencyPurchase`（`minIz` / `maxIz`）を
+  登録する必要がある。ここに交換レートは持たない。
 
 ## セキュリティ（重要）
 

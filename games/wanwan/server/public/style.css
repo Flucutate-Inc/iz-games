@@ -115,11 +115,30 @@ img { image-rendering: pixelated; }
 <circle cx='21' cy='13.4' r='2.5'/><circle cx='21' cy='18.6' r='2.5'/></g></svg>") center / contain no-repeat;
 }
 .coin-chip {
-  margin-left: auto;
   display: inline-flex; align-items: center;
   background: rgba(0, 0, 0, 0.3); border: 1px solid var(--line);
   border-radius: var(--r-full); padding: var(--s1) var(--s3);
   font-size: var(--t-cap); font-weight: 700; font-variant-numeric: tabular-nums;
+  color: var(--text); font-family: inherit;
+}
+/* ヘッダーの中では右端に寄せる(ホームのプレイヤーチップ内では中央のまま) */
+.appbar .coin-chip, .gacha-head .coin-chip { margin-left: auto; }
+/*
+ * タップで課金(IZ→コイン)モーダルを開くコインチップ。
+ * 「押せる」ことが分かるよう、コインの右に＋バッジを出す。
+ */
+.coin-chip.shop {
+  min-height: 40px; padding-right: var(--s1); gap: var(--s1);
+  cursor: pointer; box-shadow: 0 2px 0 rgba(24, 15, 48, 0.85);
+  transition: transform 80ms ease, box-shadow 80ms ease;
+}
+.coin-chip.shop:active { transform: translateY(2px); box-shadow: 0 0 0 rgba(24, 15, 48, 0.85); }
+.coin-chip.shop:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.chip-plus {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; border-radius: var(--r-full);
+  background: linear-gradient(180deg, var(--accent) 0%, var(--accent-2) 100%);
+  color: var(--accent-ink); font-size: 13px; font-weight: 700; line-height: 1;
 }
 
 /* レアリティ(図鑑・ガチャ共通) */
@@ -348,6 +367,10 @@ label { display: flex; flex-direction: column; gap: var(--s1); font-size: var(--
 .deck-summary img { width: 44px; height: 44px; background: rgba(0, 0, 0, 0.28); border-radius: var(--r-sm); border: 1px solid var(--line); }
 .deck-summary span { width: 100%; font-size: var(--t-cap); color: var(--text-2); }
 
+/* コイン購入(IZ課金)モーダル。ヘッダーのコインをタップすると開く */
+#iz-modal h3 { font-size: var(--t-title); display: flex; align-items: center; gap: var(--s1); }
+#iz-modal .terms { margin: var(--s2) 0 var(--s3); }
+#iz-modal #btn-iz-close { margin-top: var(--s3); }
 .iz-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s2); }
 .iz-buy { flex-direction: column; gap: 0; min-height: 56px; font-size: var(--t-body); }
 .iz-buy small { color: var(--accent); font-size: 11px; font-weight: 400; }
@@ -610,10 +633,15 @@ label { display: flex; flex-direction: column; gap: var(--s1); font-size: var(--
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   padding: var(--s4);
 }
+/*
+ * 背後で回る放射光。position:absolute のため(静的配置の結果カードより手前に描画され)
+ * 画面全体を覆う。pointer-events を切らないと「とじる」ボタンのタップを吸ってしまう。
+ */
 .burst {
   position: absolute; width: 150vmax; height: 150vmax; border-radius: 50%;
   background: conic-gradient(from 0deg, rgba(255, 255, 255, 0.14) 0 4deg, transparent 4deg 12deg);
   opacity: 0; animation: spin 24s linear infinite;
+  pointer-events: none;
 }
 .burst.on { opacity: 0.45; }
 .burst.sr {
@@ -656,6 +684,7 @@ label { display: flex; flex-direction: column; gap: var(--s1); font-size: var(--
 
 /* 10連でも画面からはみ出さないよう、カード側だけを内部スクロールにする */
 .gacha-summary {
+  position: relative; z-index: 1; /* 放射光(.burst)より必ず手前に置く */
   width: min(560px, 100%); text-align: center;
   display: flex; flex-direction: column; gap: var(--s2);
   max-height: calc(100dvh - var(--safe-t) - var(--safe-b) - var(--s6));
@@ -679,7 +708,7 @@ label { display: flex; flex-direction: column; gap: var(--s1); font-size: var(--
 .gacha-card.r-SR { border-color: var(--accent); box-shadow: var(--sh-accent); }
 .gacha-card .rarity { position: absolute; top: var(--s1); left: var(--s1); }
 .summary-line { font-size: var(--t-cap); color: var(--text-2); margin-bottom: var(--s3); }
-.tap-hint { position: absolute; bottom: calc(var(--safe-b) + var(--s4)); font-size: var(--t-cap); color: var(--text-3); animation: blink 1.4s ease-in-out infinite; }
+.tap-hint { position: absolute; bottom: calc(var(--safe-b) + var(--s4)); font-size: var(--t-cap); color: var(--text-3); animation: blink 1.4s ease-in-out infinite; pointer-events: none; }
 @keyframes blink { 50% { opacity: 0.25; } }
 
 /* 提供割合・ラインナップ */
@@ -816,7 +845,13 @@ label { display: flex; flex-direction: column; gap: var(--s1); font-size: var(--
 .hand-card .plv { position: absolute; top: 2px; right: 2px; background: var(--green); color: #06290f; border-radius: var(--r-sm); font-size: 10px; font-weight: 700; padding: 0 4px; }
 .hand-card.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent) inset, var(--sh-accent); transform: translateY(-4px); }
 .hand-card.disabled { filter: grayscale(0.7) brightness(0.6); cursor: default; }
-.hand-card .cdmask { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.6); display: flex; align-items: center; justify-content: center; font-weight: 700; border-radius: var(--r-md); font-variant-numeric: tabular-nums; }
+/*
+ * 出せない理由(クールダウンの残り秒 / 控え)を枠に重ねる。
+ * カードはデッキ全体をコスト順に固定表示するため、枠を消さずに覆う。
+ * 下端の強化ボタン(26px + 余白2px)には被せない(CD中でも強化できる)。
+ */
+.hand-card .cdmask { position: absolute; inset: 0 0 28px; background: rgba(0, 0, 0, 0.6); display: flex; align-items: center; justify-content: center; font-weight: 700; border-radius: var(--r-md); font-variant-numeric: tabular-nums; }
+.hand-card .cdmask.wait { background: rgba(0, 0, 0, 0.55); font-size: 11px; color: var(--text-2); }
 .hand-card.shake { animation: shake 0.25s; }
 @keyframes shake { 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
 .pet-up {
