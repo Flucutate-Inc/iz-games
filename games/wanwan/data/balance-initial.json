@@ -198,9 +198,9 @@
       "weightClass": "medium",
       "cost": 4,
       "hp": 720,
-      "attackPower": 480,
+      "attackPower": 380,
       "attackInterval": 1.8,
-      "attackRange": 270,
+      "attackRange": 240,
       "moveSpeed": 35,
       "spawnDelay": 0.6,
       "targetType": "all",
@@ -556,7 +556,7 @@
       "maxLevel": 5,
       "baseCost": 5,
       "costStep": 0,
-      "speedupPerLevel": 0.3
+      "speedupPerLevel": 0.15
     },
     "pets": {
       "name": "ペット強化",
