@@ -202,6 +202,9 @@ test('バランス調整(2026-08-01): ダックスナイパーのナーフと骨
   assert.equal(sniper.attackPower, 380, 'ダックスナイパーの攻撃力はナーフ後の値');
   assert.equal(sniper.attackRange, 240, 'ダックスナイパーの射程はナーフ後の値');
   assert.equal(snapshot.upgrades.boneSpeed.speedupPerLevel, 0.15, '骨回復のレベル毎加速は緩和後の値');
+  // engine.js の boneRegenPerSec は 1 + speedupPerLevel * level 倍
+  const boneSpeed = snapshot.upgrades.boneSpeed;
+  assert.equal(1 + boneSpeed.speedupPerLevel * boneSpeed.maxLevel, 1.75, '骨回復の最大レベル実効倍率は1.75倍');
 });
 
 test('draft作成→編集→公開→ロールバック(ADMIN-02)', () => {
