@@ -193,6 +193,20 @@ test('published 版がシードされている', () => {
   assert.equal(snap.pets.length, 16);
 });
 
+test('バランス調整(2026-08-01): ダックスナイパーのナーフと骨回復強化の緩和', () => {
+  // ユーザー報告「ダックスナイパーが強すぎる」「骨回復レベル最大が強すぎる」への調整。
+  // N排出で全ペット最長射程270+DPS267(コスト4)は突出していたため、
+  // 攻撃480→380(DPS 211)・射程270→240(最長は維持し役割は保存)。
+  // 骨回復はレベル毎+30%→+15%(最大レベルで回復2.5倍→1.75倍)に緩和。
+  const sniper = snapshot.pets.find(p => p.id === 'dachs-sniper');
+  assert.equal(sniper.attackPower, 380, 'ダックスナイパーの攻撃力はナーフ後の値');
+  assert.equal(sniper.attackRange, 240, 'ダックスナイパーの射程はナーフ後の値');
+  assert.equal(snapshot.upgrades.boneSpeed.speedupPerLevel, 0.15, '骨回復のレベル毎加速は緩和後の値');
+  // engine.js の boneRegenPerSec は 1 + speedupPerLevel * level 倍
+  const boneSpeed = snapshot.upgrades.boneSpeed;
+  assert.equal(1 + boneSpeed.speedupPerLevel * boneSpeed.maxLevel, 1.75, '骨回復の最大レベル実効倍率は1.75倍');
+});
+
 test('draft作成→編集→公開→ロールバック(ADMIN-02)', () => {
   const draftId = balance.createDraft(1, null, 'test');
   const v = balance.getVersion(draftId);
