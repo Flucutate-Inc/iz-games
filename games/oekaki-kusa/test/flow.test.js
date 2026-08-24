@@ -78,6 +78,34 @@ class Client {
     return this.wait(m => m.t === t, timeoutMs);
   }
 
+  /**
+   * 条件に合うメッセージを1件だけ取り出して消費する。
+   * `wait()` と違い見つけたメッセージをキューから取り除くので、
+   * 同種のメッセージが複数回届く場面(推薦→投稿のやり取り)で使う。
+   */
+  take(match, timeoutMs = 15000) {
+    const idx = this.messages.findIndex(match);
+    if (idx >= 0) return Promise.resolve(this.messages.splice(idx, 1)[0]);
+    return new Promise((resolve, reject) => {
+      const w = {
+        match,
+        resolve: m => {
+          const i = this.messages.indexOf(m);
+          if (i >= 0) this.messages.splice(i, 1);
+          resolve(m);
+        },
+      };
+      this.waiters.push(w);
+      setTimeout(() => {
+        const i = this.waiters.indexOf(w);
+        if (i >= 0) {
+          this.waiters.splice(i, 1);
+          reject(new Error(`${this.name}: 待っていたメッセージが来ませんでした`));
+        }
+      }, timeoutMs);
+    });
+  }
+
   /** 受信済みを捨てる(ラウンドをまたぐときに使う) */
   clear() {
     this.messages.length = 0;
@@ -125,6 +153,8 @@ test('エゴコロクイズを1試合、2人で通す', async t => {
 
   const seenDrawers = new Set();
   let lastRanking = null;
+  let matchDrawingIds = [];
+  const postedIds = [];
 
   for (let round = 0; round < 3; round++) {
     const rA = await a.wait(m => m.t === 'round' && m.roundIndex === round, 20000);
@@ -182,8 +212,46 @@ test('エゴコロクイズを1試合、2人で通す', async t => {
     b.clear();
 
     if (round === 2) {
-      const end = await a.waitType('end', 20000);
-      lastRanking = end.ranking;
+      // 最終ラウンドの答え合わせのあと、推薦コーナーが開く(その試合で描かれた3枚が対象)
+      const recA = await a.take(m => m.t === 'recommendStart', 20000);
+      const recB = await b.take(m => m.t === 'recommendStart', 20000);
+      matchDrawingIds = recA.drawings.map(d => d.drawingId);
+      assert.equal(matchDrawingIds.length, 3, '3ラウンド分の絵がそろっている');
+      assert.deepEqual(
+        [...matchDrawingIds].sort(),
+        recB.drawings.map(d => d.drawingId).sort(),
+        '全員に同じ一覧が届く',
+      );
+
+      // 自分の絵には推薦できない(命題6)。a・bともに自分以外の1枚に投票する
+      const pick = (drawings, ownId) => drawings.find(d => d.drawerId !== ownId);
+      const aPick = pick(recA.drawings, a.user.id);
+      const bPick = pick(recB.drawings, b.user.id);
+      assert.ok(aPick, 'a は自分以外の絵に投票できる');
+      assert.ok(bPick, 'b は自分以外の絵に投票できる');
+      a.send({ t: 'recommend', drawingId: aPick.drawingId, comment: 'すごい!' });
+      b.send({ t: 'recommend', drawingId: bPick.drawingId, comment: 'かわいい' });
+
+      // 票が入った絵の描き手に、投稿するか尋ねる画面が順番に回ってくる
+      for (let guard = 0; guard < 4; guard++) {
+        const msg = await a.take(m => m.t === 'postPrompt' || m.t === 'end', 20000);
+        if (msg.t === 'end') {
+          lastRanking = msg.ranking;
+          break;
+        }
+        assert.ok(Array.isArray(msg.comments) && msg.comments.length > 0, '推薦コメントが届く');
+        const artist = msg.artistUserId === a.user.id ? a : b;
+        artist.send({ t: 'postDecision', drawingId: msg.drawingId, post: true, acceptedIndices: [0] });
+        postedIds.push(msg.drawingId);
+        const posted = await a.take(m => m.t === 'posted' && m.drawingId === msg.drawingId, 20000);
+        assert.equal(posted.artistUserId, artist.user.id, '投稿したのは推薦された絵の本人');
+      }
+      if (!lastRanking) {
+        const end = await a.take(m => m.t === 'end', 20000);
+        lastRanking = end.ranking;
+      }
+      // 2人だと投票は最大2票 = 2枚まで。3枚全部には絶対に届かない(必ず未投稿が残る)
+      assert.ok(postedIds.length >= 1 && postedIds.length < matchDrawingIds.length, '推薦された分だけが投稿される');
     }
   }
 
@@ -195,17 +263,70 @@ test('エゴコロクイズを1試合、2人で通す', async t => {
     '協調ゲームなので、描き手も回答者も点が入る',
   );
 
-  // 作品がギャラリーに残っている
-  const gallery = await (await fetch(`${BASE}/api/gallery`)).json();
-  assert.ok(gallery.total >= 3, '3枚ぶんが保存されている');
-  const one = gallery.drawings[0];
-  assert.ok(one.topic, 'お題が入っている');
-  assert.ok(Array.isArray(one.strokes) && one.strokes.length > 0, 'ストロークが入っている');
-  assert.ok(one.ar > 0, '縦横比が保存されている');
-  assert.equal(one.strokes[0].p.length, 6, '線の点がつながって保存されている');
+  // 推薦されて投稿された作品だけが公開ギャラリーに載る
+  const gallery = await (await fetch(`${BASE}/api/gallery?limit=50`)).json();
+  for (const id of postedIds) {
+    const found = gallery.drawings.find(d => d.id === id);
+    assert.ok(found, `投稿した作品 #${id} が公開ギャラリーに載っている`);
+    assert.ok(found.topic, 'お題が入っている');
+    assert.ok(Array.isArray(found.strokes) && found.strokes.length > 0, 'ストロークが入っている');
+    assert.ok(found.ar > 0, '縦横比が保存されている');
+    assert.equal(found.strokes[0].p.length, 6, '線の点がつながって保存されている');
+    assert.ok(found.comments.length > 0, '本人が採用した推薦コメントが入っている');
+  }
+  const notPostedIds = matchDrawingIds.filter(id => !postedIds.includes(id));
+  assert.ok(notPostedIds.length > 0, '検証には未投稿の1枚が要る');
+  for (const id of notPostedIds) {
+    assert.ok(
+      !gallery.drawings.some(d => d.id === id),
+      `推薦されなかった作品 #${id} は公開ギャラリーに現れない`,
+    );
+  }
+
+  // 「じぶんの」一覧では、投稿していない下書きも(自分にだけは)見える
+  const mineA = await (
+    await fetch(`${BASE}/api/gallery?mine=1`, { headers: { authorization: `Bearer ${a.token}` } })
+  ).json();
+  const mineB = await (
+    await fetch(`${BASE}/api/gallery?mine=1`, { headers: { authorization: `Bearer ${b.token}` } })
+  ).json();
+  const mineIds = new Set([...mineA.drawings, ...mineB.drawings].map(d => d.id));
+  for (const id of matchDrawingIds) {
+    assert.ok(mineIds.has(id), `作品 #${id} は本人の「じぶんの」一覧には投稿有無に関わらず見える`);
+  }
 
   a.close();
   b.close();
+});
+
+test('ソロモード: 1人で描いた絵は推薦を経ずにそのままギャラリーに公開される', async () => {
+  const session = await loginGuest('ひとりぼっち');
+
+  const topicRes = await fetch(`${BASE}/api/topics/random`);
+  assert.ok(topicRes.ok, 'お題を取得できる');
+  const topic = await topicRes.json();
+  assert.ok(topic.label, 'お題のラベルが入っている');
+
+  const postRes = await fetch(`${BASE}/api/solo-post`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${session.token}` },
+    body: JSON.stringify({
+      topicLabel: topic.label,
+      ar: 1.6,
+      strokes: [{ id: 'a', c: 0, w: 1, p: [0.1, 0.1, 0.4, 0.4, 0.7, 0.2] }],
+    }),
+  });
+  assert.ok(postRes.ok, `ソロ投稿に失敗: ${postRes.status}`);
+  const { drawing } = await postRes.json();
+  assert.equal(drawing.mode, 'solo');
+  assert.equal(drawing.posted, true, '他人の承認を待つ相手がいないので即公開される');
+  assert.equal(drawing.topic, topic.label);
+
+  const gallery = await (await fetch(`${BASE}/api/gallery?limit=50`)).json();
+  assert.ok(
+    gallery.drawings.some(d => d.id === drawing.id),
+    'ソロ作品は公開ギャラリーに現れる',
+  );
 });
 
 test('合言葉が違えば入れない', async () => {

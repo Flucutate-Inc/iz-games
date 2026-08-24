@@ -11,7 +11,7 @@
 
 import topicsData from '../data/topics.json';
 import { Db, publicUser } from './src/db.js';
-import { Rooms, RULES } from './src/game.js';
+import { Rooms, RULES, sanitizeStrokes } from './src/game.js';
 import { verifyIdToken, allowedProjects } from './src/firebase-auth.js';
 import { toHiraganaOnly } from './src/kana.js';
 
@@ -132,6 +132,50 @@ export class GameServer {
       return json({ drawings, total: this.db.countDrawings() });
     }
 
+    // ホーム画面の背景など、公開済み作品からのランダム抽出
+    if (path === '/api/gallery/random' && request.method === 'GET') {
+      const n = Number(url.searchParams.get('n')) || 6;
+      return json({ drawings: this.db.randomDrawings(n) });
+    }
+
+    // ソロモード用のお題(1件)。答え合わせがないので label だけ返す
+    if (path === '/api/topics/random' && request.method === 'GET') {
+      const list = topicsData.topics;
+      const t = list[crypto.getRandomValues(new Uint32Array(1))[0] % list.length];
+      return json({ label: t.label });
+    }
+
+    // ソロモード: 1人で描いた作品。他人の承認を待つ相手がいないので、
+    // 本人の判断で即公開する(命題6の例外。対戦モードは推薦を経てから本人が選ぶ)
+    if (path === '/api/solo-post' && request.method === 'POST') {
+      const user = this.userFromRequest(request, url);
+      if (!user) return errorJson('認証が必要です', 401);
+      const body = await request.json().catch(() => ({}));
+      const topicLabel = String(body.topicLabel || '')
+        .normalize('NFKC')
+        .replace(/[\r\n\t]/g, ' ')
+        .trim()
+        .slice(0, 20);
+      if (!topicLabel) return errorJson('お題がありません', 400);
+      const strokes = sanitizeStrokes(body.strokes);
+      if (!strokes.length) return errorJson('絵が描かれていません', 400);
+      const ar = Number(body.ar);
+
+      const id = this.db.saveDrawing({
+        userId: user.id,
+        displayName: user.display_name,
+        topicLabel,
+        strokes,
+        ar: Number.isFinite(ar) && ar > 0.2 && ar < 5 ? ar : 4 / 3,
+        solved: false,
+        solverName: null,
+        roomCode: null,
+        mode: 'solo',
+        posted: true,
+      });
+      return json({ drawing: this.db.drawingById(id) });
+    }
+
     return errorJson('見つかりません', 404);
   }
 
@@ -224,6 +268,15 @@ export class GameServer {
         return;
       case 'restart':
         room()?.restart(user.id);
+        return;
+      case 'recommend':
+        room()?.recommend(user.id, Number(msg.drawingId), msg.comment);
+        return;
+      case 'postDecision':
+        room()?.decidePost(user.id, Number(msg.drawingId), {
+          post: !!msg.post,
+          acceptedIndices: Array.isArray(msg.acceptedIndices) ? msg.acceptedIndices : null,
+        });
         return;
       case 'ping':
         ws.send(JSON.stringify({ t: 'pong' }));

@@ -6,6 +6,9 @@
  *   - 得点は残り時間に比例し、**描き手にも入る**(命題2: 得点は「通じた度合い」の計測器)
  *   - 誤答にペナルティはない / レート・ランキングは持たない
  *   - 「描き手拒否」で回答専門に回れる(参加ハードルを下げる装置)
+ *   - 対戦の最後に**推薦コーナー→投稿画面**を挟む(命題6: 承認は他人経由でしか得られず、
+ *     公開は本人が決める)。全ラウンドの絵から1人1票で推薦し、票が入った絵の描き手だけが
+ *     公開するかを選べる。誰にも推薦されなかった絵は公開されない(原作どおり)。
  * スマホ向けに変えたのは主に**セッション長**で、原作の7枚から3枚に短縮した。
  *
  * 部屋の状態はメモリにしか置かない。永続するのはアカウントと作品(ギャラリー)だけ。
@@ -19,6 +22,10 @@ export const RULES = {
   rounds: 3,
   roundMs: 60_000,
   revealMs: 6_000,
+  /** 推薦コーナー・投稿画面の持ち時間(原作は7枚構成で106秒/57秒。3枚構成に合わせて縮めた) */
+  recommendMs: 25_000,
+  postMs: 20_000,
+  commentMaxLen: 80,
   /** 1枚あたりの上限(荒らし・事故対策) */
   maxStrokes: 800,
   maxPointsPerStroke: 400,
@@ -76,7 +83,7 @@ class Room {
     this.open = open; // ランダムマッチの対象にするか
     this.rooms = rooms;
     this.players = new Map(); // userId -> Player
-    this.state = 'waiting'; // waiting | playing | reveal | ended
+    this.state = 'waiting'; // waiting | playing | reveal | recommend | post | ended
     this.roundIndex = -1;
     this.drawerId = null;
     this.topic = null;
@@ -89,6 +96,12 @@ class Room {
     this.timer = null;
     this.usedTopics = new Set();
     this.drawerQueue = [];
+    /** その試合で描かれた絵(全ラウンド分)。推薦コーナーの対象になる */
+    this.matchDrawings = [];
+    /** 推薦コーナーでの投票 [{ voterId, voterName, drawingId, comment }] */
+    this.recommendations = [];
+    /** 推薦された絵のうち、まだ本人の投稿可否が決まっていないもの */
+    this.postQueue = [];
   }
 
   get connectedPlayers() {
@@ -216,6 +229,9 @@ class Room {
     this.roundIndex = -1;
     this.usedTopics = new Set();
     this.drawerQueue = [];
+    this.matchDrawings = [];
+    this.recommendations = [];
+    this.postQueue = [];
     for (const p of this.players.values()) p.score = 0;
     this.open = false; // 開始した部屋には途中参加させない
     this.nextRound();
@@ -250,7 +266,7 @@ class Room {
   nextRound() {
     this.clearTimer();
     if (this.roundIndex + 1 >= RULES.rounds) {
-      this.finish();
+      this.startRecommend();
       return;
     }
     this.roundIndex += 1;
@@ -383,7 +399,7 @@ class Room {
     const drawerPoints = RULES.drawerPerSolver * this.solvers.length;
     if (drawer) drawer.score += drawerPoints;
 
-    // 作品を保存する(全員分・全ラウンド分がギャラリーに残る)
+    // 作品を保存する(非公開)。公開するかどうかは推薦コーナーを経て本人が決める(命題6)
     let drawingId = null;
     if (drawer && this.strokes.length > 0) {
       try {
@@ -396,6 +412,15 @@ class Room {
           solved: this.solvers.length > 0,
           solverName: this.solvers[0] ? this.solvers[0].displayName : null,
           roomCode: this.code,
+          mode: 'quiz',
+        });
+        this.matchDrawings.push({
+          drawingId,
+          drawerId: drawer.userId,
+          displayName: drawer.displayName,
+          topic: this.topic.label,
+          strokes: this.strokes,
+          ar: this.ar,
         });
       } catch (e) {
         console.error('作品の保存に失敗しました:', e && e.message);
@@ -415,6 +440,138 @@ class Room {
     this.pushState();
 
     this.timer = setTimeout(() => this.nextRound(), RULES.revealMs);
+  }
+
+  // ─── 推薦コーナー ────────────────────────────────────────
+
+  /**
+   * 最終ラウンドの答え合わせが終わったら呼ばれる。
+   * その試合で1枚も絵が残らなかった(全ラウンド0ストローク)なら、推薦する対象がないので
+   * そのまま結果画面へ進む。
+   */
+  startRecommend() {
+    this.clearTimer();
+    if (!this.matchDrawings.length) {
+      this.finish();
+      return;
+    }
+    this.state = 'recommend';
+    this.recommendations = [];
+    this.endsAt = Date.now() + RULES.recommendMs;
+    this.broadcast({
+      t: 'recommendStart',
+      endsAt: this.endsAt,
+      // 全員の全ラウンド分をまとめて見せる(原作の推薦コーナーと同じ)
+      drawings: this.matchDrawings.map(d => ({
+        drawingId: d.drawingId,
+        drawerId: d.drawerId,
+        displayName: d.displayName,
+        topic: d.topic,
+        strokes: d.strokes,
+        ar: d.ar,
+      })),
+    });
+    this.pushState();
+    this.timer = setTimeout(() => this.finishRecommend(), RULES.recommendMs);
+  }
+
+  /** 1人1票。自分の絵には推薦できない(自薦できないから承認に重みが出る=命題6) */
+  recommend(userId, drawingId, comment) {
+    if (this.state !== 'recommend') return;
+    const voter = this.players.get(userId);
+    if (!voter) return;
+    const target = this.matchDrawings.find(d => d.drawingId === drawingId);
+    if (!target) return;
+    if (target.drawerId === userId) return;
+
+    const text = String(comment || '').slice(0, RULES.commentMaxLen);
+    this.recommendations = this.recommendations.filter(r => r.voterId !== userId);
+    this.recommendations.push({ voterId: userId, voterName: voter.displayName, drawingId, comment: text });
+    this.broadcast({ t: 'recommended', voterId: userId, count: this.recommendations.length });
+
+    // 投票できる全員(自分の絵しか無い人は除く)が投票し終えたら待たずに進める
+    const eligible = this.connectedPlayers.filter(p => this.matchDrawings.some(d => d.drawerId !== p.userId));
+    if (eligible.length > 0 && this.recommendations.length >= eligible.length) {
+      this.finishRecommend();
+    }
+  }
+
+  /** 推薦を締め切り、票が入った絵ごとに投稿可否を尋ねる列を作る */
+  finishRecommend() {
+    this.clearTimer();
+    const byDrawing = new Map();
+    for (const r of this.recommendations) {
+      if (!byDrawing.has(r.drawingId)) byDrawing.set(r.drawingId, []);
+      byDrawing.get(r.drawingId).push({ voterName: r.voterName, text: r.comment });
+    }
+    this.postQueue = this.matchDrawings
+      .filter(d => byDrawing.has(d.drawingId))
+      .map(d => ({
+        drawingId: d.drawingId,
+        artistUserId: d.drawerId,
+        topic: d.topic,
+        strokes: d.strokes,
+        ar: d.ar,
+        comments: byDrawing.get(d.drawingId),
+      }));
+    this.advancePostQueue();
+  }
+
+  // ─── 投稿画面 ────────────────────────────────────────────
+
+  /** 列の先頭を本人に見せる。空になったら結果画面へ */
+  advancePostQueue() {
+    this.clearTimer();
+    if (!this.postQueue.length) {
+      this.finish();
+      return;
+    }
+    this.state = 'post';
+    const next = this.postQueue[0];
+    this.endsAt = Date.now() + RULES.postMs;
+    this.broadcast({
+      t: 'postPrompt',
+      drawingId: next.drawingId,
+      artistUserId: next.artistUserId,
+      topic: next.topic,
+      strokes: next.strokes,
+      ar: next.ar,
+      comments: next.comments,
+      endsAt: this.endsAt,
+      remaining: this.postQueue.length,
+    });
+    this.pushState();
+    // 時間切れは「投稿しない」扱い(不作為で公開されることはない)
+    this.timer = setTimeout(
+      () => this.decidePost(next.artistUserId, next.drawingId, { post: false }),
+      RULES.postMs,
+    );
+  }
+
+  /** 本人が投稿するか選ぶ。採用するコメントは本人が個別に選べる */
+  decidePost(userId, drawingId, opts) {
+    if (this.state !== 'post') return;
+    const current = this.postQueue[0];
+    if (!current || current.drawingId !== drawingId || current.artistUserId !== userId) return;
+    this.clearTimer();
+
+    if (opts && opts.post) {
+      const accepted = Array.isArray(opts.acceptedIndices)
+        ? current.comments.filter((_, i) => opts.acceptedIndices.includes(i))
+        : current.comments;
+      const comments = accepted.map(c => (c.voterName ? `${c.voterName}: ${c.text}` : c.text).trim()).filter(Boolean);
+      try {
+        this.rooms.db.postDrawing(drawingId, comments);
+      } catch (e) {
+        console.error('投稿の確定に失敗しました:', e && e.message);
+      }
+      this.broadcast({ t: 'posted', drawingId, artistUserId: userId });
+    } else {
+      this.broadcast({ t: 'notPosted', drawingId, artistUserId: userId });
+    }
+
+    this.postQueue.shift();
+    this.advancePostQueue();
   }
 
   finish() {
@@ -467,6 +624,28 @@ function sanitizePoints(arr) {
     if (!Number.isFinite(v)) return [];
     // x も y も「キャンバスの幅」で割った値。縦長なので y は 1 を超える(上限 4 で十分)
     out.push(Math.min(4, Math.max(0, Math.round(v * 1000) / 1000)));
+  }
+  return out;
+}
+
+/**
+ * ソロモード用。対戦中は s0/s+ で少しずつ検証しながら積み上げるが、
+ * ソロは描き終わった1枚を丸ごと送ってくるので、一括で同じ上限をかける。
+ */
+export function sanitizeStrokes(rawStrokes) {
+  if (!Array.isArray(rawStrokes)) return [];
+  const out = [];
+  let totalPoints = 0;
+  for (const raw of rawStrokes.slice(0, RULES.maxStrokes)) {
+    if (!raw || typeof raw !== 'object') continue;
+    const c = Math.min(8, Math.max(0, raw.c | 0));
+    const w = Math.min(2, Math.max(0, raw.w | 0));
+    const p = sanitizePoints(raw.p);
+    if (!p.length) continue;
+    if (p.length / 2 > RULES.maxPointsPerStroke) continue;
+    if (totalPoints + p.length / 2 > RULES.maxPointsTotal) break;
+    totalPoints += p.length / 2;
+    out.push({ id: String(raw.id || out.length), u: null, c, w, p });
   }
   return out;
 }

@@ -142,6 +142,10 @@ body {
 .bar-right.link {
   color: var(--accent);
 }
+.bar-right:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
 
 /* プレイ中のバーは「何枚目 / お題 / 残り秒」だけ */
 .play-bar {
@@ -188,7 +192,8 @@ body {
   overflow: hidden;
 }
 
-#board {
+#board,
+#solo-board {
   position: absolute;
   inset: 0;
   display: block;
@@ -759,7 +764,8 @@ body {
   flex-direction: column;
   gap: 8px;
 }
-#sheet-canvas {
+#sheet-canvas,
+.preview-canvas {
   width: 100%;
   aspect-ratio: 3 / 4;
   border: 1px solid var(--line);
@@ -777,6 +783,23 @@ body {
   font-size: 12px;
   color: var(--ink-3);
   text-align: center;
+}
+.sheet-comments {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.sheet-comments:empty {
+  display: none;
+}
+.sheet-comments li {
+  font-size: 12px;
+  color: var(--ink-2);
+  border-top: 1px solid var(--line);
+  padding-top: 6px;
 }
 
 /* ─── トースト ───────────────────────────────────────── */
@@ -809,4 +832,87 @@ body {
   word-break: break-all;
   max-height: 200px;
   overflow-y: auto;
+}
+
+/* ─── ホーム背景（いままで投稿された絵をうっすら） ───────── */
+
+.home-bg {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+.home-bg canvas {
+  position: absolute;
+  opacity: 0.1;
+  filter: grayscale(1);
+}
+.center {
+  position: relative;
+}
+.center > :not(.home-bg) {
+  position: relative;
+  z-index: 1;
+}
+
+/* ─── 推薦コーナー ───────────────────────────────────── */
+
+.timer-inline {
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-3);
+  font-size: 13px;
+}
+.timer-inline.urgent {
+  color: var(--warn);
+}
+
+.card.selectable {
+  cursor: pointer;
+}
+.card.selected {
+  box-shadow: inset 0 0 0 2px var(--ink);
+}
+.card.own {
+  opacity: 0.4;
+  cursor: default;
+}
+.card-own-tag {
+  display: block;
+  padding: 8px 10px;
+  font-size: 11px;
+  color: var(--ink-3);
+  text-align: center;
+}
+
+/* ─── 投稿画面 ───────────────────────────────────────── */
+
+.comments {
+  list-style: none;
+  margin: 0 0 4px;
+  padding: 0;
+  border-top: 1px solid var(--line);
+}
+.comments li {
+  border-bottom: 1px solid var(--line);
+}
+.comments .check {
+  padding: 12px 4px;
+  align-items: flex-start;
+  font-size: 14px;
+  color: var(--ink);
+}
+.comments .check input {
+  margin-top: 2px;
+  flex: none;
+}
+
+/* ─── ひとりでかく ───────────────────────────────────── */
+
+.solo-topic-label {
+  margin: 8px 0 0;
+  font-size: 32px;
+  font-weight: 700;
+  text-align: center;
+  letter-spacing: 0.02em;
 }

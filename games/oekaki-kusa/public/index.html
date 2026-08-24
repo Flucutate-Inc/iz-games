@@ -39,10 +39,13 @@
           <span class="bar-right" id="home-me"></span>
         </header>
         <div class="center">
+          <!-- いままで投稿された絵を背景にうっすら流す(タップは通さない) -->
+          <div class="home-bg" id="home-bg" aria-hidden="true"></div>
           <p class="tagline">おだいを絵で伝える。<br />ひらがなで当てる。</p>
           <div class="stack">
             <button class="btn primary" id="btn-match">みんなとあそぶ</button>
             <button class="btn" id="btn-code">合言葉で参加</button>
+            <button class="btn" id="btn-solo">ひとりでかく</button>
             <button class="btn" id="btn-gallery">ギャラリー</button>
           </div>
           <p class="note" id="home-stats"></p>
@@ -125,6 +128,53 @@
         <div class="scorestrip" id="scorestrip"></div>
       </section>
 
+      <!-- ══ 推薦コーナー（原作の "みんなのおえかき" への推薦） ══ -->
+      <section class="view hidden" id="view-recommend">
+        <header class="bar">
+          <span class="bar-title">すいせん</span>
+          <span class="bar-right timer-inline" id="recommend-timer"></span>
+        </header>
+        <div class="scroll">
+          <p class="note" id="recommend-hint">
+            いちばん好きな1枚をえらんで、コメントをそえよう（自分の絵は選べません）
+          </p>
+          <div class="grid" id="recommend-grid"></div>
+          <label class="field">
+            <span class="field-label">コメント（にんい）</span>
+            <input
+              id="recommend-comment"
+              type="text"
+              maxlength="80"
+              placeholder="どうしてこうなった!?"
+              autocomplete="off"
+            />
+          </label>
+          <div class="stack">
+            <button class="btn primary" id="btn-recommend-send" disabled>推薦する</button>
+          </div>
+          <p class="note" id="recommend-waiting"></p>
+        </div>
+      </section>
+
+      <!-- ══ 投稿画面（推薦された本人だけが見る） ══ -->
+      <section class="view hidden" id="view-post">
+        <header class="bar">
+          <span class="bar-title">とうこう</span>
+          <span class="bar-right timer-inline" id="post-timer"></span>
+        </header>
+        <div class="scroll">
+          <p class="note">あなたの絵が推薦されました！公開しますか？</p>
+          <canvas id="post-canvas" class="preview-canvas"></canvas>
+          <p class="sheet-topic" id="post-topic"></p>
+          <p class="field-label" id="post-comments-label"></p>
+          <ul class="comments" id="post-comments"></ul>
+          <div class="stack">
+            <button class="btn primary" id="btn-post-yes">投稿する</button>
+            <button class="btn ghost" id="btn-post-no">投稿しない</button>
+          </div>
+        </div>
+      </section>
+
       <!-- ══ 結果 ══ -->
       <section class="view hidden" id="view-result">
         <header class="bar">
@@ -136,6 +186,43 @@
           <div class="stack">
             <button class="btn primary" id="btn-again">もういちど</button>
             <button class="btn" id="btn-result-gallery">この回の絵を見る</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══ ひとりでかく（お題を1つ選ぶ） ══ -->
+      <section class="view hidden" id="view-solo-topic">
+        <header class="bar">
+          <button class="bar-back" id="solo-topic-back" aria-label="もどる">←</button>
+          <span class="bar-title">ひとりでかく</span>
+          <span class="bar-right"></span>
+        </header>
+        <div class="center">
+          <p class="note">このお題を絵にしてみよう</p>
+          <p class="solo-topic-label" id="solo-topic-label">…</p>
+          <div class="stack">
+            <button class="btn primary" id="btn-solo-start">これでかく</button>
+            <button class="btn ghost" id="btn-solo-reroll">べつのお題にする</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══ ひとりでかく（縦画面いっぱいのキャンバス。時間制限なし） ══ -->
+      <section class="view hidden" id="view-solo-draw">
+        <header class="bar">
+          <button class="bar-back" id="solo-draw-back" aria-label="やめる">←</button>
+          <span class="bar-title" id="solo-draw-topic">…</span>
+          <button class="bar-right link" id="btn-solo-post">とうこう</button>
+        </header>
+        <div class="stage">
+          <canvas id="solo-board"></canvas>
+        </div>
+        <div class="tools" id="solo-tools">
+          <div class="swatches" id="solo-swatches"></div>
+          <div class="tool-btns">
+            <div class="widths" id="solo-widths"></div>
+            <button class="tool" id="btn-solo-undo" aria-label="ひとつもどす">もどす</button>
+            <button class="tool" id="btn-solo-clear" aria-label="ぜんぶ消す">全消し</button>
           </div>
         </div>
       </section>
@@ -160,6 +247,7 @@
           <canvas id="sheet-canvas"></canvas>
           <p class="sheet-topic" id="sheet-topic"></p>
           <p class="sheet-meta" id="sheet-meta"></p>
+          <ul class="sheet-comments" id="sheet-comments"></ul>
           <button class="btn" id="sheet-close">とじる</button>
         </div>
       </div>

@@ -19,6 +19,10 @@
     solved: false,
     lastDrawings: [],
     gallery: { items: [], mine: false, done: false },
+    recommend: null, // { drawings, endsAt, selectedId, sent }
+    post: null, // { drawingId, endsAt }
+    soloBoard: null,
+    soloTopic: null,
   };
 
   var izDiag = { steps: [], token: null };
@@ -243,6 +247,41 @@
     $('home-me').textContent = state.me ? state.me.displayName : '';
     Net.connect();
     refreshStats();
+    loadHomeBackground();
+  }
+
+  /** いままで投稿された絵をうっすら背景に流す。決まった数の場所に散らして置く */
+  async function loadHomeBackground() {
+    var el = $('home-bg');
+    if (!el) return;
+    var slots = [
+      { left: '-10%', top: '2%', size: 130, rot: -12 },
+      { left: '60%', top: '0%', size: 150, rot: 9 },
+      { left: '-12%', top: '56%', size: 150, rot: 11 },
+      { left: '58%', top: '58%', size: 140, rot: -9 },
+      { left: '24%', top: '80%', size: 116, rot: 5 },
+    ];
+    try {
+      var res = await Net.api('/gallery/random?n=' + slots.length);
+      var items = res.drawings || [];
+      el.innerHTML = '';
+      items.slice(0, slots.length).forEach(function (d, i) {
+        var slot = slots[i];
+        var cv = document.createElement('canvas');
+        var ar = Math.min(1.6, Math.max(0.7, d.ar || 4 / 3));
+        cv.style.left = slot.left;
+        cv.style.top = slot.top;
+        cv.style.width = slot.size + 'px';
+        cv.style.height = Math.round(slot.size * ar) + 'px';
+        cv.style.transform = 'rotate(' + slot.rot + 'deg)';
+        el.appendChild(cv);
+        requestAnimationFrame(function () {
+          Draw.render(cv, d);
+        });
+      });
+    } catch (e) {
+      /* 背景が無くても困らない。静かに諦める */
+    }
   }
 
   async function refreshStats() {
@@ -260,6 +299,12 @@
   // ══ 部屋 ══════════════════════════════════════════════════
 
   var pendingJoin = null;
+  /**
+   * 直近まで居た部屋の合言葉。スマホは通信が途切れやすく、WebSocket は
+   * 自動で繋ぎ直る(net.js)がサーバー側の部屋は再 join しないと関連付けが戻らない。
+   * 'hello'(=接続成立のたび)に、居たはずの部屋へそっと再入室しておく。
+   */
+  var lastRoomCode = null;
 
   function joinRoom(code) {
     var msg = { t: 'join', code: code || null };
@@ -328,9 +373,9 @@
     return state.board;
   }
 
-  function buildTools() {
-    var sw = $('swatches');
-    sw.innerHTML = '';
+  /** 対戦用・ソロ用で同じ道具立てを使い回す */
+  function buildPaintTools(board, swatchEl, widthEl) {
+    swatchEl.innerHTML = '';
     Draw.PALETTE.forEach(function (color, i) {
       var b = document.createElement('button');
       b.type = 'button';
@@ -339,16 +384,15 @@
       b.setAttribute('aria-pressed', i === 0 ? 'true' : 'false');
       b.setAttribute('aria-label', i === Draw.ERASER_INDEX ? 'けしゴム' : 'いろ' + (i + 1));
       b.onclick = function () {
-        state.board.setColor(i);
-        Array.prototype.forEach.call(sw.children, function (el, j) {
+        board.setColor(i);
+        Array.prototype.forEach.call(swatchEl.children, function (el, j) {
           el.setAttribute('aria-pressed', i === j ? 'true' : 'false');
         });
       };
-      sw.appendChild(b);
+      swatchEl.appendChild(b);
     });
 
-    var wd = $('widths');
-    wd.innerHTML = '';
+    widthEl.innerHTML = '';
     Draw.WIDTHS.forEach(function (w, i) {
       var b = document.createElement('button');
       b.type = 'button';
@@ -361,13 +405,17 @@
       dot.style.height = px + 'px';
       b.appendChild(dot);
       b.onclick = function () {
-        state.board.setWidth(i);
-        Array.prototype.forEach.call(wd.children, function (el, j) {
+        board.setWidth(i);
+        Array.prototype.forEach.call(widthEl.children, function (el, j) {
           el.setAttribute('aria-pressed', i === j ? 'true' : 'false');
         });
       };
-      wd.appendChild(b);
+      widthEl.appendChild(b);
     });
+  }
+
+  function buildTools() {
+    buildPaintTools(state.board, $('swatches'), $('widths'));
   }
 
   var timerHandle = null;
@@ -479,12 +527,14 @@
     } else {
       $('veil-list').innerHTML = '<li class="none">だれも当てられなかった…</li>';
     }
-    $('veil-next').textContent = msg.isLast ? 'けっかを出しています…' : 'つぎの絵へ…';
+    $('veil-next').textContent = msg.isLast ? 'すいせんコーナーへ…' : 'つぎの絵へ…';
     $('veil').classList.remove('hidden');
   }
 
   function showResult(msg) {
     stopTimer();
+    stopRecommendTimer();
+    stopPostTimer();
     show('result');
     var mvp = msg.mvp || [];
     $('ranking').innerHTML = msg.ranking
@@ -497,6 +547,249 @@
         );
       })
       .join('');
+  }
+
+  // ══ 推薦コーナー ══════════════════════════════════════════
+  //
+  // 最終ラウンドの答え合わせが終わると、その試合で描かれた絵が一覧で並ぶ。
+  // 自分の絵には推薦できない(自薦できないから承認に重みが出る=命題6)。
+  // 票が入った絵の描き手だけが、次の「投稿画面」で公開するかを選ぶ。
+
+  var recommendTimerHandle = null;
+
+  function startRecommendTimer() {
+    stopRecommendTimer();
+    recommendTimerHandle = setInterval(paintRecommendTimer, 200);
+    paintRecommendTimer();
+  }
+
+  function stopRecommendTimer() {
+    if (recommendTimerHandle) clearInterval(recommendTimerHandle);
+    recommendTimerHandle = null;
+  }
+
+  function paintRecommendTimer() {
+    if (!state.recommend) return;
+    var left = Math.max(0, Math.ceil((state.recommend.endsAt - Date.now()) / 1000));
+    var el = $('recommend-timer');
+    el.textContent = left + '秒';
+    el.classList.toggle('urgent', left <= 5);
+  }
+
+  function enterRecommend(msg) {
+    state.recommend = { drawings: msg.drawings, endsAt: msg.endsAt, selectedId: null, sent: false };
+    show('recommend');
+
+    document.querySelector('#view-recommend .field').classList.remove('hidden');
+    $('btn-recommend-send').classList.remove('hidden');
+    $('recommend-hint').textContent = 'いちばん好きな1枚をえらんで、コメントをそえよう（自分の絵は選べません）';
+    $('recommend-comment').value = '';
+    $('recommend-comment').disabled = false;
+    $('btn-recommend-send').disabled = true;
+    $('btn-recommend-send').textContent = '推薦する';
+    $('recommend-waiting').textContent = '';
+
+    var grid = $('recommend-grid');
+    grid.innerHTML = '';
+    msg.drawings.forEach(function (d) {
+      var isOwn = !!(state.me && d.drawerId === state.me.id);
+      var card = document.createElement(isOwn ? 'div' : 'button');
+      if (!isOwn) card.type = 'button';
+      card.className = 'card selectable' + (isOwn ? ' own' : '');
+      card.dataset.drawingId = d.drawingId;
+
+      var cv = document.createElement('canvas');
+      cv.style.aspectRatio = '1 / ' + Math.min(2.2, Math.max(0.6, d.ar || 4 / 3));
+      card.appendChild(cv);
+
+      var body = document.createElement('div');
+      body.className = 'card-body';
+      body.innerHTML = '<p class="card-topic">' + esc(d.topic) + '</p><p class="card-meta">' + esc(d.displayName) + '</p>';
+      card.appendChild(body);
+
+      if (isOwn) {
+        var tag = document.createElement('span');
+        tag.className = 'card-own-tag';
+        tag.textContent = '（自分の絵）';
+        card.appendChild(tag);
+      } else {
+        card.onclick = function () {
+          selectRecommend(d.drawingId);
+        };
+      }
+
+      grid.appendChild(card);
+      requestAnimationFrame(function () {
+        Draw.render(cv, d);
+      });
+    });
+
+    startRecommendTimer();
+  }
+
+  function selectRecommend(drawingId) {
+    if (!state.recommend || state.recommend.sent) return;
+    state.recommend.selectedId = drawingId;
+    var cards = $('recommend-grid').querySelectorAll('.card');
+    Array.prototype.forEach.call(cards, function (el) {
+      el.classList.toggle('selected', Number(el.dataset.drawingId) === drawingId);
+    });
+    $('btn-recommend-send').disabled = false;
+  }
+
+  function sendRecommend() {
+    if (!state.recommend || !state.recommend.selectedId || state.recommend.sent) return;
+    var comment = $('recommend-comment').value.trim().slice(0, 80);
+    Net.send({ t: 'recommend', drawingId: state.recommend.selectedId, comment: comment });
+    state.recommend.sent = true;
+    $('btn-recommend-send').disabled = true;
+    $('btn-recommend-send').textContent = '送信しました';
+    $('recommend-comment').disabled = true;
+    $('recommend-waiting').textContent = 'ほかの人を待っています…';
+  }
+
+  // ── 投稿画面(推薦された本人だけが見る) ──────────────────
+
+  var postTimerHandle = null;
+
+  function startPostTimer() {
+    stopPostTimer();
+    postTimerHandle = setInterval(paintPostTimer, 200);
+    paintPostTimer();
+  }
+
+  function stopPostTimer() {
+    if (postTimerHandle) clearInterval(postTimerHandle);
+    postTimerHandle = null;
+  }
+
+  function paintPostTimer() {
+    if (!state.post) return;
+    var left = Math.max(0, Math.ceil((state.post.endsAt - Date.now()) / 1000));
+    var el = $('post-timer');
+    el.textContent = left + '秒';
+    el.classList.toggle('urgent', left <= 5);
+  }
+
+  /** 誰かの絵が推薦された。自分が描き手なら投稿画面、そうでなければ待機表示 */
+  function handlePostPrompt(msg) {
+    if (state.me && msg.artistUserId === state.me.id) {
+      enterPost(msg);
+      return;
+    }
+    show('recommend');
+    document.querySelector('#view-recommend .field').classList.add('hidden');
+    $('btn-recommend-send').classList.add('hidden');
+    $('recommend-grid').innerHTML = '';
+    $('recommend-hint').textContent = esc(msg.artistDisplayName || 'だれか') + 'さんの絵が推薦されました';
+    $('recommend-waiting').textContent = '投稿するか決めています…';
+    $('recommend-timer').textContent = '';
+  }
+
+  function enterPost(msg) {
+    state.post = { drawingId: msg.drawingId, endsAt: msg.endsAt };
+    show('post');
+
+    var cv = $('post-canvas');
+    cv.style.aspectRatio = '1 / ' + Math.min(2.2, Math.max(0.6, msg.ar || 4 / 3));
+    requestAnimationFrame(function () {
+      Draw.render(cv, { ar: msg.ar, strokes: msg.strokes });
+    });
+    $('post-topic').textContent = msg.topic;
+
+    var comments = msg.comments || [];
+    $('post-comments-label').textContent = comments.length ? comments.length + '件のコメント' : 'コメントはありません';
+    var list = $('post-comments');
+    list.innerHTML = comments
+      .map(function (c, i) {
+        return (
+          '<li><label class="check"><input type="checkbox" checked data-idx="' + i + '">' +
+          '<span>' + (c.voterName ? esc(c.voterName) + ': ' : '') + esc(c.text || '') + '</span></label></li>'
+        );
+      })
+      .join('');
+
+    $('btn-post-yes').disabled = false;
+    $('btn-post-no').disabled = false;
+    startPostTimer();
+  }
+
+  function sendPostDecision(post) {
+    if (!state.post) return;
+    var acceptedIndices = [];
+    if (post) {
+      Array.prototype.forEach.call($('post-comments').querySelectorAll('input[type=checkbox]'), function (cb) {
+        if (cb.checked) acceptedIndices.push(Number(cb.dataset.idx));
+      });
+    }
+    Net.send({ t: 'postDecision', drawingId: state.post.drawingId, post: !!post, acceptedIndices: acceptedIndices });
+    $('btn-post-yes').disabled = true;
+    $('btn-post-no').disabled = true;
+    stopPostTimer();
+  }
+
+  // ══ ひとりでかく ══════════════════════════════════════════
+  //
+  // 対戦とちがい、当ててくれる相手がいない。他人の承認を待つ相手がいないので、
+  // 本人の判断で即ギャラリーに公開する(命題6の例外)。
+
+  async function openSoloTopic() {
+    show('solo-topic');
+    $('solo-topic-label').textContent = '…';
+    await rerollSoloTopic();
+  }
+
+  async function rerollSoloTopic() {
+    try {
+      var res = await Net.api('/topics/random');
+      state.soloTopic = res.label;
+      $('solo-topic-label').textContent = res.label;
+    } catch (e) {
+      toast('お題を取得できませんでした');
+    }
+  }
+
+  function ensureSoloBoard() {
+    if (state.soloBoard) return state.soloBoard;
+    state.soloBoard = new Draw.Board($('solo-board'), {});
+    state.soloBoard.myUserId = state.me ? state.me.id : null;
+    buildPaintTools(state.soloBoard, $('solo-swatches'), $('solo-widths'));
+    state.soloBoard.resize();
+    return state.soloBoard;
+  }
+
+  function enterSoloDraw() {
+    show('solo-draw');
+    $('solo-draw-topic').textContent = state.soloTopic || '';
+    var board = ensureSoloBoard();
+    board.reset();
+    board.myUserId = state.me ? state.me.id : null;
+    board.setEnabled(true);
+  }
+
+  async function postSoloDrawing() {
+    if (!state.soloBoard) return;
+    var strokes = state.soloBoard.strokes.map(function (s) {
+      return { id: s.id, c: s.c, w: s.w, p: s.p.slice() };
+    });
+    if (!strokes.length) {
+      toast('まだ何も描かれていません');
+      return;
+    }
+    $('btn-solo-post').disabled = true;
+    try {
+      await Net.api('/solo-post', {
+        body: { topicLabel: state.soloTopic, strokes: strokes, ar: state.soloBoard.aspect() },
+      });
+      toast('とうこうしました！');
+      show('home');
+      loadHomeBackground();
+      refreshStats();
+    } catch (e) {
+      toast('とうこうできませんでした: ' + e.message);
+    } finally {
+      $('btn-solo-post').disabled = false;
+    }
   }
 
   // ══ ギャラリー ════════════════════════════════════════════
@@ -538,11 +831,15 @@
       card.appendChild(cv);
       var body = document.createElement('div');
       body.className = 'card-body';
+      var meta =
+        d.mode === 'solo'
+          ? 'ひとりでかいた'
+          : d.solved
+            ? '<span class="ok">当てられた</span>'
+            : 'だれも当てられず';
       body.innerHTML =
         '<p class="card-topic">' + esc(d.topic) + '</p>' +
-        '<p class="card-meta">' + esc(d.displayName) +
-        (d.solved ? ' ・ <span class="ok">当てられた</span>' : ' ・ だれも当てられず') +
-        '</p>';
+        '<p class="card-meta">' + esc(d.displayName) + ' ・ ' + meta + '</p>';
       card.appendChild(body);
       card.onclick = function () {
         openSheet(d);
@@ -567,7 +864,19 @@
     $('sheet-canvas').style.aspectRatio = '1 / ' + Math.min(2.2, Math.max(0.6, d.ar || 4 / 3));
     $('sheet-topic').textContent = d.topic;
     $('sheet-meta').textContent =
-      d.displayName + ' ・ ' + (d.solved ? (d.solverName || 'だれか') + 'さんが当てた' : 'だれも当てられなかった');
+      d.displayName +
+      ' ・ ' +
+      (d.mode === 'solo'
+        ? 'ひとりでかいた'
+        : d.solved
+          ? (d.solverName || 'だれか') + 'さんが当てた'
+          : 'だれも当てられなかった');
+    var comments = d.comments || [];
+    $('sheet-comments').innerHTML = comments
+      .map(function (c) {
+        return '<li>' + esc(c) + '</li>';
+      })
+      .join('');
     requestAnimationFrame(function () {
       Draw.render($('sheet-canvas'), d);
     });
@@ -624,11 +933,15 @@
       if (pendingJoin) {
         Net.send(pendingJoin);
         pendingJoin = null;
+      } else if (lastRoomCode) {
+        // 再接続。サーバー側の部屋の関連付け(どのソケットに送ればよいか)を結び直す
+        Net.send({ t: 'join', code: lastRoomCode });
       }
     });
 
     Net.on('room', function (msg) {
       state.room = msg;
+      lastRoomCode = msg.code;
       if (msg.state === 'waiting') {
         renderWait();
         // ギャラリーを見ている最中に画面を奪わない
@@ -639,15 +952,22 @@
     });
 
     Net.on('joinError', function (msg) {
+      lastRoomCode = null;
       toast(msg.message);
       show('home');
     });
 
     Net.on('left', function () {
+      lastRoomCode = null;
       state.room = null;
       state.round = null;
+      state.recommend = null;
+      state.post = null;
+      stopRecommendTimer();
+      stopPostTimer();
       show('home');
       refreshStats();
+      loadHomeBackground();
     });
 
     Net.on('round', enterRound);
@@ -685,6 +1005,21 @@
     });
 
     Net.on('reveal', showReveal);
+
+    Net.on('recommendStart', enterRecommend);
+    Net.on('recommended', function (msg) {
+      if (!state.recommend) return;
+      $('recommend-waiting').textContent =
+        (state.recommend.sent ? '送信しました。' : '') + msg.count + '人が投票しました';
+    });
+    Net.on('postPrompt', handlePostPrompt);
+    Net.on('posted', function () {
+      toast('投稿されました！');
+    });
+    Net.on('notPosted', function () {
+      toast('投稿されませんでした');
+    });
+
     Net.on('end', showResult);
 
     Net.on('notice', function (msg) {
@@ -748,6 +1083,10 @@
       openGallery(false);
     };
 
+    $('btn-solo').onclick = function () {
+      openSoloTopic();
+    };
+
     $('opt-nodraw').onchange = function () {
       Net.send({ t: 'noDraw', value: $('opt-nodraw').checked });
     };
@@ -804,6 +1143,32 @@
 
     $('btn-result-gallery').onclick = function () {
       openGallery(false);
+    };
+
+    $('btn-recommend-send').onclick = sendRecommend;
+
+    $('btn-post-yes').onclick = function () {
+      sendPostDecision(true);
+    };
+    $('btn-post-no').onclick = function () {
+      sendPostDecision(false);
+    };
+
+    $('solo-topic-back').onclick = function () {
+      show('home');
+    };
+    $('btn-solo-reroll').onclick = rerollSoloTopic;
+    $('btn-solo-start').onclick = enterSoloDraw;
+
+    $('solo-draw-back').onclick = function () {
+      show('solo-topic');
+    };
+    $('btn-solo-post').onclick = postSoloDrawing;
+    $('btn-solo-undo').onclick = function () {
+      if (state.soloBoard) state.soloBoard.undoMine();
+    };
+    $('btn-solo-clear').onclick = function () {
+      if (state.soloBoard) state.soloBoard.clearAll();
     };
 
     $('gallery-back').onclick = function () {
