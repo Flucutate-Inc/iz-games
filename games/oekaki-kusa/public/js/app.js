@@ -20,7 +20,6 @@
     lastDrawings: [],
     gallery: { items: [], mine: false, done: false },
     recommend: null, // { drawings, endsAt, selectedId, sent }
-    post: null, // { drawingId, endsAt }
     soloBoard: null,
     soloTopic: null,
   };
@@ -534,7 +533,6 @@
   function showResult(msg) {
     stopTimer();
     stopRecommendTimer();
-    stopPostTimer();
     show('result');
     var mvp = msg.mvp || [];
     $('ranking').innerHTML = msg.ranking
@@ -648,90 +646,23 @@
     $('recommend-waiting').textContent = 'ほかの人を待っています…';
   }
 
-  // ── 投稿画面(推薦された本人だけが見る) ──────────────────
-
-  var postTimerHandle = null;
-
-  function startPostTimer() {
-    stopPostTimer();
-    postTimerHandle = setInterval(paintPostTimer, 200);
-    paintPostTimer();
-  }
-
-  function stopPostTimer() {
-    if (postTimerHandle) clearInterval(postTimerHandle);
-    postTimerHandle = null;
-  }
-
-  function paintPostTimer() {
-    if (!state.post) return;
-    var left = Math.max(0, Math.ceil((state.post.endsAt - Date.now()) / 1000));
-    var el = $('post-timer');
-    el.textContent = left + '秒';
-    el.classList.toggle('urgent', left <= 5);
-  }
-
-  /** 誰かの絵が推薦された。自分が描き手なら投稿画面、そうでなければ待機表示 */
-  function handlePostPrompt(msg) {
-    if (state.me && msg.artistUserId === state.me.id) {
-      enterPost(msg);
-      return;
-    }
-    show('recommend');
-    document.querySelector('#view-recommend .field').classList.add('hidden');
-    $('btn-recommend-send').classList.add('hidden');
-    $('recommend-grid').innerHTML = '';
-    $('recommend-hint').textContent = esc(msg.artistDisplayName || 'だれか') + 'さんの絵が推薦されました';
-    $('recommend-waiting').textContent = '投稿するか決めています…';
-    $('recommend-timer').textContent = '';
-  }
-
-  function enterPost(msg) {
-    state.post = { drawingId: msg.drawingId, endsAt: msg.endsAt };
-    show('post');
-
-    var cv = $('post-canvas');
-    cv.style.aspectRatio = '1 / ' + Math.min(2.2, Math.max(0.6, msg.ar || 4 / 3));
-    requestAnimationFrame(function () {
-      Draw.render(cv, { ar: msg.ar, strokes: msg.strokes });
+  /** 推薦の集計結果。トーストで軽く流すだけ(絵はギャラリーで見られる) */
+  function handleRecommendResult(msg) {
+    var mine = (msg.results || []).filter(function (r) {
+      return state.me && r.artistUserId === state.me.id && r.votes > 0;
     });
-    $('post-topic').textContent = msg.topic;
-
-    var comments = msg.comments || [];
-    $('post-comments-label').textContent = comments.length ? comments.length + '件のコメント' : 'コメントはありません';
-    var list = $('post-comments');
-    list.innerHTML = comments
-      .map(function (c, i) {
-        return (
-          '<li><label class="check"><input type="checkbox" checked data-idx="' + i + '">' +
-          '<span>' + (c.voterName ? esc(c.voterName) + ': ' : '') + esc(c.text || '') + '</span></label></li>'
-        );
-      })
-      .join('');
-
-    $('btn-post-yes').disabled = false;
-    $('btn-post-no').disabled = false;
-    startPostTimer();
-  }
-
-  function sendPostDecision(post) {
-    if (!state.post) return;
-    var acceptedIndices = [];
-    if (post) {
-      Array.prototype.forEach.call($('post-comments').querySelectorAll('input[type=checkbox]'), function (cb) {
-        if (cb.checked) acceptedIndices.push(Number(cb.dataset.idx));
-      });
+    if (mine.length) {
+      var total = mine.reduce(function (n, r) {
+        return n + r.votes;
+      }, 0);
+      toast('あなたの絵に ' + total + '票入りました！');
     }
-    Net.send({ t: 'postDecision', drawingId: state.post.drawingId, post: !!post, acceptedIndices: acceptedIndices });
-    $('btn-post-yes').disabled = true;
-    $('btn-post-no').disabled = true;
-    stopPostTimer();
   }
 
   // ══ ひとりでかく ══════════════════════════════════════════
   //
-  // 対戦とちがい、当ててくれる相手がいない。他人の承認を待つ相手がいないので、
-  // 本人の判断で即ギャラリーに公開する(命題6の例外)。
+  // 対戦とちがい、当ててくれる相手がいない。描いて投稿すると
+  // そのままギャラリーに載る。
 
   async function openSoloTopic() {
     show('solo-topic');
@@ -837,9 +768,19 @@
           : d.solved
             ? '<span class="ok">当てられた</span>'
             : 'だれも当てられず';
+      var counts = '';
+      if (d.likeCount || d.commentCount) {
+        counts =
+          '<p class="card-counts">' +
+          (d.likeCount ? (d.likedByMe ? '♥' : '♡') + ' ' + d.likeCount : '') +
+          (d.likeCount && d.commentCount ? ' ・ ' : '') +
+          (d.commentCount ? '💬 ' + d.commentCount : '') +
+          '</p>';
+      }
       body.innerHTML =
         '<p class="card-topic">' + esc(d.topic) + '</p>' +
-        '<p class="card-meta">' + esc(d.displayName) + ' ・ ' + meta + '</p>';
+        '<p class="card-meta">' + esc(d.displayName) + ' ・ ' + meta + '</p>' +
+        counts;
       card.appendChild(body);
       card.onclick = function () {
         openSheet(d);
@@ -859,7 +800,11 @@
     $('gallery-more').classList.toggle('hidden', g.done || !g.items.length);
   }
 
+  /** いま拡大シートで開いている作品 */
+  var sheetDrawing = null;
+
   function openSheet(d) {
+    sheetDrawing = d;
     $('sheet').classList.remove('hidden');
     $('sheet-canvas').style.aspectRatio = '1 / ' + Math.min(2.2, Math.max(0.6, d.ar || 4 / 3));
     $('sheet-topic').textContent = d.topic;
@@ -871,15 +816,138 @@
         : d.solved
           ? (d.solverName || 'だれか') + 'さんが当てた'
           : 'だれも当てられなかった');
-    var comments = d.comments || [];
-    $('sheet-comments').innerHTML = comments
-      .map(function (c) {
-        return '<li>' + esc(c) + '</li>';
-      })
-      .join('');
+
+    renderSheetLike(d.likedByMe, d.likeCount);
+    $('sheet-comment-input').value = '';
+    $('sheet-comments').innerHTML = '';
+    loadSheetComments(d.id);
+
     requestAnimationFrame(function () {
       Draw.render($('sheet-canvas'), d);
     });
+  }
+
+  function renderSheetLike(liked, count) {
+    $('sheet-like-heart').textContent = liked ? '♥' : '♡';
+    $('sheet-like-count').textContent = String(count || 0);
+    $('sheet-like').classList.toggle('liked', !!liked);
+  }
+
+  async function loadSheetComments(drawingId) {
+    try {
+      var res = await Net.api('/drawings/' + drawingId + '/comments');
+      if (!sheetDrawing || sheetDrawing.id !== drawingId) return; // もう別の絵を見ている
+      renderSheetComments(res.comments || []);
+    } catch (e) {
+      /* コメントが読めなくても絵は見られる。静かに諦める */
+    }
+  }
+
+  function renderSheetComments(comments) {
+    $('sheet-comments').innerHTML = comments
+      .map(function (c) {
+        return '<li><b>' + esc(c.displayName) + '</b>' + esc(c.text) + '</li>';
+      })
+      .join('');
+    // 最新が見えるように下へ
+    var el = $('sheet-comments');
+    el.scrollTop = el.scrollHeight;
+  }
+
+  async function toggleSheetLike() {
+    if (!sheetDrawing) return;
+    var d = sheetDrawing;
+    $('sheet-like').disabled = true;
+    try {
+      var res = await Net.api('/drawings/' + d.id + '/like', { body: {} });
+      d.likedByMe = res.liked;
+      d.likeCount = res.count;
+      if (sheetDrawing === d) renderSheetLike(res.liked, res.count);
+    } catch (e) {
+      toast('いいねできませんでした: ' + e.message);
+    } finally {
+      $('sheet-like').disabled = false;
+    }
+  }
+
+  async function submitSheetComment(ev) {
+    ev.preventDefault();
+    if (!sheetDrawing) return;
+    var d = sheetDrawing;
+    var input = $('sheet-comment-input');
+    var text = input.value.trim().slice(0, 80);
+    if (!text) return;
+    $('sheet-comment-send').disabled = true;
+    try {
+      await Net.api('/drawings/' + d.id + '/comments', { body: { text: text } });
+      input.value = '';
+      d.commentCount = (d.commentCount || 0) + 1;
+      loadSheetComments(d.id);
+    } catch (e) {
+      toast('コメントできませんでした: ' + e.message);
+    } finally {
+      $('sheet-comment-send').disabled = false;
+    }
+  }
+
+  /**
+   * シェア。絵を PNG にして Web Share API(なければリンクのコピー)で渡す。
+   * IZ アプリ(WebView)内では files 付き share が使えないことがあるので、
+   * その場合はテキスト+URLだけの share → クリップボード、の順に落とす。
+   */
+  async function shareSheetDrawing() {
+    if (!sheetDrawing) return;
+    var d = sheetDrawing;
+    var url = location.origin + '/?drawing=' + d.id;
+    var text = '「' + d.topic + '」 by ' + d.displayName + ' — お絵かきの草';
+
+    // 絵を PNG 化する(白背景で 2 倍解像度)
+    var blob = null;
+    try {
+      var cv = document.createElement('canvas');
+      var w = 640;
+      var ar = Math.min(2.2, Math.max(0.6, d.ar || 4 / 3));
+      cv.width = w;
+      cv.height = Math.round(w * ar);
+      cv.style.width = w + 'px';
+      cv.style.height = Math.round(w * ar) + 'px';
+      // Draw.render は clientWidth を見るので、一時的に DOM に置く
+      cv.style.position = 'fixed';
+      cv.style.left = '-9999px';
+      document.body.appendChild(cv);
+      Draw.render(cv, d);
+      blob = await new Promise(function (resolve) {
+        cv.toBlob(resolve, 'image/png');
+      });
+      document.body.removeChild(cv);
+    } catch (e) {
+      blob = null;
+    }
+
+    try {
+      if (blob && navigator.canShare && navigator.canShare({ files: [new File([blob], 'oekaki.png', { type: 'image/png' })] })) {
+        await navigator.share({
+          files: [new File([blob], 'oekaki.png', { type: 'image/png' })],
+          text: text,
+          url: url,
+        });
+        return;
+      }
+      if (navigator.share) {
+        await navigator.share({ text: text, url: url });
+        return;
+      }
+    } catch (e) {
+      if (e && e.name === 'AbortError') return; // ユーザーがキャンセルしただけ
+    }
+
+    // 最後の砦: リンクをコピー
+    try {
+      await navigator.clipboard.writeText(text + ' ' + url);
+      toast('リンクをコピーしました');
+    } catch (e) {
+      toast('このリンクを共有してください: ' + url);
+    }
   }
 
   // ══ 回答入力(ひらがな限定) ════════════════════════════════
@@ -962,9 +1030,7 @@
       state.room = null;
       state.round = null;
       state.recommend = null;
-      state.post = null;
       stopRecommendTimer();
-      stopPostTimer();
       show('home');
       refreshStats();
       loadHomeBackground();
@@ -1012,13 +1078,7 @@
       $('recommend-waiting').textContent =
         (state.recommend.sent ? '送信しました。' : '') + msg.count + '人が投票しました';
     });
-    Net.on('postPrompt', handlePostPrompt);
-    Net.on('posted', function () {
-      toast('投稿されました！');
-    });
-    Net.on('notPosted', function () {
-      toast('投稿されませんでした');
-    });
+    Net.on('recommendResult', handleRecommendResult);
 
     Net.on('end', showResult);
 
@@ -1147,13 +1207,6 @@
 
     $('btn-recommend-send').onclick = sendRecommend;
 
-    $('btn-post-yes').onclick = function () {
-      sendPostDecision(true);
-    };
-    $('btn-post-no').onclick = function () {
-      sendPostDecision(false);
-    };
-
     $('solo-topic-back').onclick = function () {
       show('home');
     };
@@ -1184,18 +1237,38 @@
     $('gallery-more').onclick = loadGallery;
 
     $('sheet-close').onclick = function () {
+      sheetDrawing = null;
       $('sheet').classList.add('hidden');
     };
     $('sheet').onclick = function (ev) {
-      if (ev.target === $('sheet')) $('sheet').classList.add('hidden');
+      if (ev.target === $('sheet')) {
+        sheetDrawing = null;
+        $('sheet').classList.add('hidden');
+      }
     };
 
+    $('sheet-like').onclick = toggleSheetLike;
+    $('sheet-share').onclick = shareSheetDrawing;
+    $('sheet-comment-form').addEventListener('submit', submitSheetComment);
+
     setupGuessInput();
+  }
+
+  /** シェアされたリンク(?drawing=N)で開かれたら、その絵をすぐ見せる */
+  async function openSharedDrawing() {
+    var m = /[?&]drawing=(\d+)/.exec(location.search);
+    if (!m) return;
+    try {
+      var res = await Net.api('/drawings/' + m[1]);
+      openSheet(res.drawing);
+    } catch (e) {
+      /* 消えた作品などは黙って無視する */
+    }
   }
 
   // ══ 起動 ══════════════════════════════════════════════════
 
   wireUi();
   wireSocket();
-  boot();
+  boot().then(openSharedDrawing);
 })();

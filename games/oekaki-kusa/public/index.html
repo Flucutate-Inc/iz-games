@@ -156,25 +156,6 @@
         </div>
       </section>
 
-      <!-- ══ 投稿画面（推薦された本人だけが見る） ══ -->
-      <section class="view hidden" id="view-post">
-        <header class="bar">
-          <span class="bar-title">とうこう</span>
-          <span class="bar-right timer-inline" id="post-timer"></span>
-        </header>
-        <div class="scroll">
-          <p class="note">あなたの絵が推薦されました！公開しますか？</p>
-          <canvas id="post-canvas" class="preview-canvas"></canvas>
-          <p class="sheet-topic" id="post-topic"></p>
-          <p class="field-label" id="post-comments-label"></p>
-          <ul class="comments" id="post-comments"></ul>
-          <div class="stack">
-            <button class="btn primary" id="btn-post-yes">投稿する</button>
-            <button class="btn ghost" id="btn-post-no">投稿しない</button>
-          </div>
-        </div>
-      </section>
-
       <!-- ══ 結果 ══ -->
       <section class="view hidden" id="view-result">
         <header class="bar">
@@ -247,7 +228,29 @@
           <canvas id="sheet-canvas"></canvas>
           <p class="sheet-topic" id="sheet-topic"></p>
           <p class="sheet-meta" id="sheet-meta"></p>
+
+          <!-- いいね・シェア -->
+          <div class="sheet-actions">
+            <button class="action-btn" id="sheet-like" type="button">
+              <span class="heart" id="sheet-like-heart">♡</span>
+              <span id="sheet-like-count">0</span>
+            </button>
+            <button class="action-btn" id="sheet-share" type="button">シェア</button>
+          </div>
+
+          <!-- コメント -->
           <ul class="sheet-comments" id="sheet-comments"></ul>
+          <form class="commentbar" id="sheet-comment-form" autocomplete="off">
+            <input
+              id="sheet-comment-input"
+              type="text"
+              maxlength="80"
+              placeholder="コメントをかく"
+              autocomplete="off"
+            />
+            <button class="send" type="submit" id="sheet-comment-send">送信</button>
+          </form>
+
           <button class="btn" id="sheet-close">とじる</button>
         </div>
       </div>

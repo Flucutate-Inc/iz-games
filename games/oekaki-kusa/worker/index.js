@@ -128,14 +128,63 @@ export class GameServer {
         limit: Number(url.searchParams.get('limit')) || 24,
         before: Number(url.searchParams.get('before')) || null,
         userId: mine ? user.id : null,
+        viewerId: user ? user.id : null,
       });
       return json({ drawings, total: this.db.countDrawings() });
     }
 
-    // ホーム画面の背景など、公開済み作品からのランダム抽出
+    // ホーム画面の背景など、作品からのランダム抽出
     if (path === '/api/gallery/random' && request.method === 'GET') {
       const n = Number(url.searchParams.get('n')) || 6;
       return json({ drawings: this.db.randomDrawings(n) });
+    }
+
+    // 作品1件(シェアされたリンクから開くときに使う)
+    {
+      const m = path.match(/^\/api\/drawings\/(\d+)$/);
+      if (m && request.method === 'GET') {
+        const user = this.userFromRequest(request, url);
+        const drawing = this.db.drawingById(Number(m[1]), user ? user.id : null);
+        if (!drawing) return errorJson('その作品はありません', 404);
+        return json({ drawing, comments: this.db.listComments(drawing.id) });
+      }
+    }
+
+    // いいね(トグル)
+    {
+      const m = path.match(/^\/api\/drawings\/(\d+)\/like$/);
+      if (m && request.method === 'POST') {
+        const user = this.userFromRequest(request, url);
+        if (!user) return errorJson('認証が必要です', 401);
+        const id = Number(m[1]);
+        if (!this.db.drawingExists(id)) return errorJson('その作品はありません', 404);
+        return json(this.db.toggleLike(id, user.id));
+      }
+    }
+
+    // コメント(一覧・追加)
+    {
+      const m = path.match(/^\/api\/drawings\/(\d+)\/comments$/);
+      if (m) {
+        const id = Number(m[1]);
+        if (!this.db.drawingExists(id)) return errorJson('その作品はありません', 404);
+        if (request.method === 'GET') {
+          return json({ comments: this.db.listComments(id) });
+        }
+        if (request.method === 'POST') {
+          const user = this.userFromRequest(request, url);
+          if (!user) return errorJson('認証が必要です', 401);
+          const body = await request.json().catch(() => ({}));
+          // NFKC はかけない(全角の「！」などが変わってしまう)。改行・制御文字だけ潰す
+          const text = String(body.text || '')
+            .replace(/[\u0000-\u001f\u007f]+/g, ' ')
+            .trim()
+            .slice(0, 80);
+          if (!text) return errorJson('コメントが空です', 400);
+          const comment = this.db.addComment(id, user.id, user.display_name, text);
+          return json({ comment });
+        }
+      }
     }
 
     // ソロモード用のお題(1件)。答え合わせがないので label だけ返す
@@ -145,8 +194,7 @@ export class GameServer {
       return json({ label: t.label });
     }
 
-    // ソロモード: 1人で描いた作品。他人の承認を待つ相手がいないので、
-    // 本人の判断で即公開する(命題6の例外。対戦モードは推薦を経てから本人が選ぶ)
+    // ソロモード: 1人で描いた作品。描いた時点でギャラリーに並ぶ
     if (path === '/api/solo-post' && request.method === 'POST') {
       const user = this.userFromRequest(request, url);
       if (!user) return errorJson('認証が必要です', 401);
@@ -171,9 +219,8 @@ export class GameServer {
         solverName: null,
         roomCode: null,
         mode: 'solo',
-        posted: true,
       });
-      return json({ drawing: this.db.drawingById(id) });
+      return json({ drawing: this.db.drawingById(id, user.id) });
     }
 
     return errorJson('見つかりません', 404);
@@ -271,12 +318,6 @@ export class GameServer {
         return;
       case 'recommend':
         room()?.recommend(user.id, Number(msg.drawingId), msg.comment);
-        return;
-      case 'postDecision':
-        room()?.decidePost(user.id, Number(msg.drawingId), {
-          post: !!msg.post,
-          acceptedIndices: Array.isArray(msg.acceptedIndices) ? msg.acceptedIndices : null,
-        });
         return;
       case 'ping':
         ws.send(JSON.stringify({ t: 'pong' }));

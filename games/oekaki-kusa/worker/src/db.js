@@ -2,16 +2,16 @@
  * Durable Object の SQLite に置く永続データ。
  *
  * 部屋(対戦中の状態)はメモリ上にしか持たない。ここに残すのは
- * アカウント・セッションと、**投稿された**おえかき作品(ギャラリー)だけ。
+ * アカウント・セッションと、**描かれた作品すべて**(ギャラリー)、
+ * そしていいね・コメントだけ。
  *
  * 絵はビットマップではなく「作者IDつきのストローク列」で保存する。
  * 原作の「荒らしを追放するとその人の描いた線だけが消える」仕様から読み取った設計で、
  * 容量が小さく、あとから再生・巻き戻し・差分同期がすべてこれ1つで解ける。
  *
- * ギャラリーへの公開は2通り(研究 命題6「承認は他人経由でしか得られず、公開は本人が決める」):
- *   - quiz: 対戦後の推薦コーナーで誰かに推薦された作品だけ、本人が投稿を選べる
- *   - solo: 1人で描いた作品。他人の承認を待つ相手がいないので、本人の判断で即公開する
- * どちらも `posted = 1` になったものだけがギャラリーに並ぶ。
+ * 対戦で描いた絵も、1人で描いた絵も、**描いた時点で全部ギャラリーに並ぶ**。
+ * 対戦の最後にある推薦コーナー(game.js)は「公開してよいかの審査」ではなく、
+ * 推薦されたコメントをその絵にそのまま添える、という位置づけ。
  */
 
 export class Db {
@@ -45,14 +45,31 @@ export class Db {
       solver_name   TEXT,
       room_code     TEXT,
       mode          TEXT NOT NULL DEFAULT 'quiz', -- 'quiz' | 'solo'
-      posted        INTEGER NOT NULL DEFAULT 0,   -- ギャラリーに公開済みか
-      comments_json TEXT,                          -- 推薦コメント(本人が採用したものだけ)
+      posted        INTEGER NOT NULL DEFAULT 0,   -- 旧スキーマの名残(未使用。読み書きしない)
+      comments_json TEXT,                          -- 同上
       created_at    TEXT NOT NULL DEFAULT (datetime('now')),
       posted_at     TEXT
     )`);
-
-    this.sql.exec('CREATE INDEX IF NOT EXISTS idx_drawings_posted ON drawings (posted, id DESC)');
+    this.sql.exec('CREATE INDEX IF NOT EXISTS idx_drawings_created ON drawings (id DESC)');
     this.sql.exec('CREATE INDEX IF NOT EXISTS idx_drawings_user ON drawings (user_id, id DESC)');
+
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS likes (
+      drawing_id INTEGER NOT NULL,
+      user_id    INTEGER NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (drawing_id, user_id)
+    )`);
+    this.sql.exec('CREATE INDEX IF NOT EXISTS idx_likes_drawing ON likes (drawing_id)');
+
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS comments (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      drawing_id   INTEGER NOT NULL,
+      user_id      INTEGER,
+      display_name TEXT NOT NULL,
+      text         TEXT NOT NULL,
+      created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+    )`);
+    this.sql.exec('CREATE INDEX IF NOT EXISTS idx_comments_drawing ON comments (drawing_id, id)');
   }
 
   // ─── アカウント ──────────────────────────────────────────
@@ -105,18 +122,12 @@ export class Db {
 
   // ─── ギャラリー ──────────────────────────────────────────
 
-  /**
-   * 1枚保存して、保存した行の id を返す。
-   * `posted` を渡さなければ非公開(0)で保存され、あとから `postDrawing` で公開する。
-   * solo モードはここで posted: true を渡して即公開する。
-   */
-  saveDrawing({ userId, displayName, topicLabel, strokes, ar, solved, solverName, roomCode, mode, posted, comments }) {
-    const isPosted = posted ? 1 : 0;
+  /** 1枚保存して、保存した行の id を返す。描いた時点で誰でも見られる。 */
+  saveDrawing({ userId, displayName, topicLabel, strokes, ar, solved, solverName, roomCode, mode }) {
     this.sql.exec(
       `INSERT INTO drawings
-        (user_id, display_name, topic_label, strokes_json, stroke_count, solved, solver_name,
-         room_code, mode, posted, comments_json, posted_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (user_id, display_name, topic_label, strokes_json, stroke_count, solved, solver_name, room_code, mode)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       userId,
       displayName,
       topicLabel,
@@ -127,63 +138,115 @@ export class Db {
       solverName || null,
       roomCode || null,
       mode || 'quiz',
-      isPosted,
-      comments && comments.length ? JSON.stringify(comments) : null,
-      isPosted ? new Date().toISOString() : null,
     );
     return this.sql.exec('SELECT last_insert_rowid() AS id').one().id;
   }
 
-  /** 推薦コーナーを経て、本人が「投稿する」を選んだときに呼ぶ */
-  postDrawing(id, comments) {
-    this.sql.exec(
-      `UPDATE drawings SET posted = 1, comments_json = ?, posted_at = datetime('now') WHERE id = ?`,
-      comments && comments.length ? JSON.stringify(comments) : null,
-      id,
-    );
-  }
-
-  drawingById(id) {
-    const row = this.sql.exec('SELECT * FROM drawings WHERE id = ?', id).toArray()[0];
+  drawingById(id, viewerId = null) {
+    const row = this.selectWithCounts('WHERE d.id = ?', [id], viewerId)[0];
     return row ? publicDrawing(row) : null;
   }
 
   /**
-   * ギャラリー一覧。`mine` に user_id を渡すとその人の作品だけ返す(未公開含む、自分の控え)。
-   * それ以外は **公開済み(posted=1)のものだけ**。
+   * ギャラリー一覧。`mine` に user_id を渡すとその人の作品だけ返す。
+   * `viewerId` は「自分がいいね済みか」を判定するためのもので、見る人がログインしていれば渡す。
    */
-  listDrawings({ limit = 30, before = null, userId = null } = {}) {
+  listDrawings({ limit = 30, before = null, userId = null, viewerId = null } = {}) {
     const lim = Math.min(Math.max(1, limit | 0), 60);
-    let rows;
-    if (userId && before) {
-      rows = this.sql
-        .exec('SELECT * FROM drawings WHERE user_id = ? AND id < ? ORDER BY id DESC LIMIT ?', userId, before, lim)
-        .toArray();
-    } else if (userId) {
-      rows = this.sql
-        .exec('SELECT * FROM drawings WHERE user_id = ? ORDER BY id DESC LIMIT ?', userId, lim)
-        .toArray();
-    } else if (before) {
-      rows = this.sql
-        .exec('SELECT * FROM drawings WHERE posted = 1 AND id < ? ORDER BY id DESC LIMIT ?', before, lim)
-        .toArray();
-    } else {
-      rows = this.sql.exec('SELECT * FROM drawings WHERE posted = 1 ORDER BY id DESC LIMIT ?', lim).toArray();
+    const conds = [];
+    const params = [];
+    if (userId) {
+      conds.push('d.user_id = ?');
+      params.push(userId);
     }
+    if (before) {
+      conds.push('d.id < ?');
+      params.push(before);
+    }
+    const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
+    const rows = this.selectWithCounts(where, params, viewerId, lim);
     return rows.map(publicDrawing);
   }
 
-  /** ホーム画面の背景などに使う、公開済み作品からのランダム抽出 */
+  /** ホーム画面の背景などに使う、作品からのランダム抽出 */
   randomDrawings(n = 6) {
     const lim = Math.min(Math.max(1, n | 0), 20);
     return this.sql
-      .exec('SELECT * FROM drawings WHERE posted = 1 ORDER BY RANDOM() LIMIT ?', lim)
+      .exec('SELECT * FROM drawings ORDER BY RANDOM() LIMIT ?', lim)
       .toArray()
       .map(publicDrawing);
   }
 
   countDrawings() {
-    return this.sql.exec('SELECT COUNT(*) AS n FROM drawings WHERE posted = 1').one().n;
+    return this.sql.exec('SELECT COUNT(*) AS n FROM drawings').one().n;
+  }
+
+  /** like_count / comment_count / liked_by_me を付けて drawings を引く共通クエリ */
+  selectWithCounts(where, params, viewerId, limit = null) {
+    const sql = `
+      SELECT d.*,
+        (SELECT COUNT(*) FROM likes l WHERE l.drawing_id = d.id) AS like_count,
+        (SELECT COUNT(*) FROM comments c WHERE c.drawing_id = d.id) AS comment_count,
+        EXISTS(SELECT 1 FROM likes l WHERE l.drawing_id = d.id AND l.user_id = ?) AS liked_by_me
+      FROM drawings d
+      ${where}
+      ORDER BY d.id DESC
+      ${limit ? 'LIMIT ?' : ''}
+    `;
+    const args = [viewerId || 0, ...params, ...(limit ? [limit] : [])];
+    return this.sql.exec(sql, ...args).toArray();
+  }
+
+  // ─── いいね ──────────────────────────────────────────────
+
+  /** 推薦コーナー用: 付けるだけ(すでに付いていれば何もしない) */
+  toggleLikeOn(drawingId, userId) {
+    this.sql.exec(
+      'INSERT OR IGNORE INTO likes (drawing_id, user_id) VALUES (?, ?)',
+      drawingId,
+      userId,
+    );
+  }
+
+  /** トグルする。結果として今どうなったかを返す */
+  toggleLike(drawingId, userId) {
+    const existing = this.sql
+      .exec('SELECT 1 FROM likes WHERE drawing_id = ? AND user_id = ?', drawingId, userId)
+      .toArray()[0];
+    if (existing) {
+      this.sql.exec('DELETE FROM likes WHERE drawing_id = ? AND user_id = ?', drawingId, userId);
+    } else {
+      this.sql.exec('INSERT INTO likes (drawing_id, user_id) VALUES (?, ?)', drawingId, userId);
+    }
+    const count = this.sql.exec('SELECT COUNT(*) AS n FROM likes WHERE drawing_id = ?', drawingId).one().n;
+    return { liked: !existing, count };
+  }
+
+  // ─── コメント ────────────────────────────────────────────
+
+  addComment(drawingId, userId, displayName, text) {
+    this.sql.exec(
+      'INSERT INTO comments (drawing_id, user_id, display_name, text) VALUES (?, ?, ?, ?)',
+      drawingId,
+      userId,
+      displayName,
+      text,
+    );
+    const row = this.sql
+      .exec('SELECT * FROM comments WHERE id = last_insert_rowid()')
+      .toArray()[0];
+    return publicComment(row);
+  }
+
+  listComments(drawingId, limit = 100) {
+    return this.sql
+      .exec('SELECT * FROM comments WHERE drawing_id = ? ORDER BY id ASC LIMIT ?', drawingId, limit)
+      .toArray()
+      .map(publicComment);
+  }
+
+  drawingExists(id) {
+    return !!this.sql.exec('SELECT 1 FROM drawings WHERE id = ?', id).toArray()[0];
   }
 }
 
@@ -202,14 +265,6 @@ export function publicDrawing(row) {
   } catch {
     strokes = [];
   }
-  let comments = [];
-  if (row.comments_json) {
-    try {
-      comments = JSON.parse(row.comments_json);
-    } catch {
-      comments = [];
-    }
-  }
   return {
     id: row.id,
     userId: row.user_id,
@@ -220,8 +275,20 @@ export function publicDrawing(row) {
     solved: !!row.solved,
     solverName: row.solver_name,
     mode: row.mode || 'quiz',
-    posted: !!row.posted,
-    comments,
+    likeCount: row.like_count || 0,
+    likedByMe: !!row.liked_by_me,
+    commentCount: row.comment_count || 0,
+    createdAt: row.created_at,
+  };
+}
+
+export function publicComment(row) {
+  return {
+    id: row.id,
+    drawingId: row.drawing_id,
+    userId: row.user_id,
+    displayName: row.display_name,
+    text: row.text,
     createdAt: row.created_at,
   };
 }

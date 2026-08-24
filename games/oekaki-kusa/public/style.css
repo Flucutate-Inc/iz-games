@@ -739,6 +739,12 @@ body {
 .card-meta .ok {
   color: var(--accent);
 }
+.card-counts {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
 
 /* ─── 作品の拡大 ─────────────────────────────────────── */
 
@@ -791,15 +797,23 @@ body {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  max-height: 180px;
+  overflow-y: auto;
 }
 .sheet-comments:empty {
   display: none;
 }
 .sheet-comments li {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--ink-2);
   border-top: 1px solid var(--line);
   padding-top: 6px;
+  line-height: 1.6;
+}
+.sheet-comments li b {
+  font-weight: 600;
+  color: var(--ink);
+  margin-right: 6px;
 }
 
 /* ─── トースト ───────────────────────────────────────── */
@@ -885,26 +899,68 @@ body {
   text-align: center;
 }
 
-/* ─── 投稿画面 ───────────────────────────────────────── */
+/* ─── いいね・シェア・コメント(作品の拡大シート内) ───── */
 
-.comments {
-  list-style: none;
-  margin: 0 0 4px;
-  padding: 0;
-  border-top: 1px solid var(--line);
+.sheet-actions {
+  display: flex;
+  gap: 8px;
 }
-.comments li {
-  border-bottom: 1px solid var(--line);
-}
-.comments .check {
-  padding: 12px 4px;
-  align-items: flex-start;
+.action-btn {
+  flex: 1;
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--ink-2);
+  font: inherit;
   font-size: 14px;
-  color: var(--ink);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
 }
-.comments .check input {
-  margin-top: 2px;
-  flex: none;
+.action-btn:active {
+  background: var(--sunk);
+}
+.action-btn:disabled {
+  opacity: 0.4;
+}
+.action-btn .heart {
+  font-size: 16px;
+  line-height: 1;
+}
+.action-btn.liked {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+.commentbar {
+  display: flex;
+  gap: 8px;
+}
+#sheet-comment-input {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--sunk);
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px; /* 16px 未満だと iOS が勝手にズームする */
+}
+#sheet-comment-input:focus {
+  outline: none;
+  border-color: var(--ink);
+  background: var(--paper);
+}
+.commentbar .send {
+  height: 40px;
+  padding: 0 14px;
+  font-size: 14px;
 }
 
 /* ─── ひとりでかく ───────────────────────────────────── */

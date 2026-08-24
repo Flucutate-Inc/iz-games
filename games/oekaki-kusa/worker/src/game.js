@@ -6,9 +6,10 @@
  *   - 得点は残り時間に比例し、**描き手にも入る**(命題2: 得点は「通じた度合い」の計測器)
  *   - 誤答にペナルティはない / レート・ランキングは持たない
  *   - 「描き手拒否」で回答専門に回れる(参加ハードルを下げる装置)
- *   - 対戦の最後に**推薦コーナー→投稿画面**を挟む(命題6: 承認は他人経由でしか得られず、
- *     公開は本人が決める)。全ラウンドの絵から1人1票で推薦し、票が入った絵の描き手だけが
- *     公開するかを選べる。誰にも推薦されなかった絵は公開されない(原作どおり)。
+ *   - 対戦の最後に**推薦コーナー**を挟む。全ラウンドの絵から1人1票で好きな絵を選び、
+ *     コメントを添える。推薦は「その絵へのいいね+コメント」としてそのままギャラリーに残る。
+ *     (以前は推薦→本人が投稿を選ぶゲートだったが、全作品を常時公開する方針に変えた。
+ *      ギャラリーのいいね・コメントが常設になったので、推薦は審査ではなく賞賛の儀式)
  * スマホ向けに変えたのは主に**セッション長**で、原作の7枚から3枚に短縮した。
  *
  * 部屋の状態はメモリにしか置かない。永続するのはアカウントと作品(ギャラリー)だけ。
@@ -22,9 +23,8 @@ export const RULES = {
   rounds: 3,
   roundMs: 60_000,
   revealMs: 6_000,
-  /** 推薦コーナー・投稿画面の持ち時間(原作は7枚構成で106秒/57秒。3枚構成に合わせて縮めた) */
+  /** 推薦コーナーの持ち時間(原作は7枚構成で106秒。3枚構成に合わせて縮めた) */
   recommendMs: 25_000,
-  postMs: 20_000,
   commentMaxLen: 80,
   /** 1枚あたりの上限(荒らし・事故対策) */
   maxStrokes: 800,
@@ -83,7 +83,7 @@ class Room {
     this.open = open; // ランダムマッチの対象にするか
     this.rooms = rooms;
     this.players = new Map(); // userId -> Player
-    this.state = 'waiting'; // waiting | playing | reveal | recommend | post | ended
+    this.state = 'waiting'; // waiting | playing | reveal | recommend | ended
     this.roundIndex = -1;
     this.drawerId = null;
     this.topic = null;
@@ -100,8 +100,6 @@ class Room {
     this.matchDrawings = [];
     /** 推薦コーナーでの投票 [{ voterId, voterName, drawingId, comment }] */
     this.recommendations = [];
-    /** 推薦された絵のうち、まだ本人の投稿可否が決まっていないもの */
-    this.postQueue = [];
   }
 
   get connectedPlayers() {
@@ -231,7 +229,6 @@ class Room {
     this.drawerQueue = [];
     this.matchDrawings = [];
     this.recommendations = [];
-    this.postQueue = [];
     for (const p of this.players.values()) p.score = 0;
     this.open = false; // 開始した部屋には途中参加させない
     this.nextRound();
@@ -399,7 +396,7 @@ class Room {
     const drawerPoints = RULES.drawerPerSolver * this.solvers.length;
     if (drawer) drawer.score += drawerPoints;
 
-    // 作品を保存する(非公開)。公開するかどうかは推薦コーナーを経て本人が決める(命題6)
+    // 作品を保存する。描いた時点でギャラリーに並ぶ(全作品を常時公開する方針)
     let drawingId = null;
     if (drawer && this.strokes.length > 0) {
       try {
@@ -496,82 +493,40 @@ class Room {
     }
   }
 
-  /** 推薦を締め切り、票が入った絵ごとに投稿可否を尋ねる列を作る */
+  /**
+   * 推薦を締め切る。各票は「その絵へのいいね+コメント」としてギャラリーに直接残す。
+   * 結果を全員に見せてから結果画面へ。
+   */
   finishRecommend() {
+    if (this.state !== 'recommend') return;
     this.clearTimer();
+
     const byDrawing = new Map();
     for (const r of this.recommendations) {
+      try {
+        this.rooms.db.toggleLikeOn(r.drawingId, r.voterId);
+        if (r.comment) {
+          this.rooms.db.addComment(r.drawingId, r.voterId, r.voterName, r.comment);
+        }
+      } catch (e) {
+        console.error('推薦の記録に失敗しました:', e && e.message);
+      }
       if (!byDrawing.has(r.drawingId)) byDrawing.set(r.drawingId, []);
       byDrawing.get(r.drawingId).push({ voterName: r.voterName, text: r.comment });
     }
-    this.postQueue = this.matchDrawings
-      .filter(d => byDrawing.has(d.drawingId))
-      .map(d => ({
+
+    this.broadcast({
+      t: 'recommendResult',
+      results: this.matchDrawings.map(d => ({
         drawingId: d.drawingId,
         artistUserId: d.drawerId,
+        displayName: d.displayName,
         topic: d.topic,
-        strokes: d.strokes,
-        ar: d.ar,
-        comments: byDrawing.get(d.drawingId),
-      }));
-    this.advancePostQueue();
-  }
-
-  // ─── 投稿画面 ────────────────────────────────────────────
-
-  /** 列の先頭を本人に見せる。空になったら結果画面へ */
-  advancePostQueue() {
-    this.clearTimer();
-    if (!this.postQueue.length) {
-      this.finish();
-      return;
-    }
-    this.state = 'post';
-    const next = this.postQueue[0];
-    this.endsAt = Date.now() + RULES.postMs;
-    this.broadcast({
-      t: 'postPrompt',
-      drawingId: next.drawingId,
-      artistUserId: next.artistUserId,
-      topic: next.topic,
-      strokes: next.strokes,
-      ar: next.ar,
-      comments: next.comments,
-      endsAt: this.endsAt,
-      remaining: this.postQueue.length,
+        votes: (byDrawing.get(d.drawingId) || []).length,
+        comments: byDrawing.get(d.drawingId) || [],
+      })),
     });
-    this.pushState();
-    // 時間切れは「投稿しない」扱い(不作為で公開されることはない)
-    this.timer = setTimeout(
-      () => this.decidePost(next.artistUserId, next.drawingId, { post: false }),
-      RULES.postMs,
-    );
-  }
-
-  /** 本人が投稿するか選ぶ。採用するコメントは本人が個別に選べる */
-  decidePost(userId, drawingId, opts) {
-    if (this.state !== 'post') return;
-    const current = this.postQueue[0];
-    if (!current || current.drawingId !== drawingId || current.artistUserId !== userId) return;
-    this.clearTimer();
-
-    if (opts && opts.post) {
-      const accepted = Array.isArray(opts.acceptedIndices)
-        ? current.comments.filter((_, i) => opts.acceptedIndices.includes(i))
-        : current.comments;
-      const comments = accepted.map(c => (c.voterName ? `${c.voterName}: ${c.text}` : c.text).trim()).filter(Boolean);
-      try {
-        this.rooms.db.postDrawing(drawingId, comments);
-      } catch (e) {
-        console.error('投稿の確定に失敗しました:', e && e.message);
-      }
-      this.broadcast({ t: 'posted', drawingId, artistUserId: userId });
-    } else {
-      this.broadcast({ t: 'notPosted', drawingId, artistUserId: userId });
-    }
-
-    this.postQueue.shift();
-    this.advancePostQueue();
+    this.finish();
   }
 
   finish() {
