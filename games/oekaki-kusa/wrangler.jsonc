@@ -1,0 +1,26 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "oekaki-kusa",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-01-01",
+
+  // ゲーム本体と IZ SDK は静的アセットとして配信する(Worker を起動しないので無料枠を消費しない)。
+  // worker/public は build-assets.sh の生成物。
+  "assets": {
+    "directory": "worker/public",
+    "binding": "ASSETS"
+  },
+
+  // 部屋はメモリ上、SQLite は単一。DO は "main" の1個だけ使う(わんわん大戦争と同じ前提)。
+  "durable_objects": {
+    "bindings": [{ "name": "GAME", "class_name": "GameServer" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["GameServer"] }],
+
+  "vars": {
+    // IZ アプリの Firebase プロジェクト。カンマ区切りで複数指定できる。
+    "FIREBASE_PROJECT": "iz-app-6e1d5"
+  },
+
+  "observability": { "enabled": true }
+}

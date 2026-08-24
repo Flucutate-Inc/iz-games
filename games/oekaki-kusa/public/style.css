@@ -1,0 +1,812 @@
+/*
+ * お絵かきの草 — ミニマム。
+ *
+ * 方針: キャンバスが主役。それ以外は全部あとずさりする。
+ * 装飾・影・グラデーション・イラストは置かない。線は 1px のヘアラインだけ。
+ * 色は「紙・インク・一色のアクセント」＋クレヨンの色見本だけに絞る。
+ * (原作の「道具の貧しさが平等を生む」という設計をUIにもそのまま適用している)
+ */
+
+:root {
+  --paper: #ffffff;
+  --sunk: #f5f5f1;
+  --ink: #14140f;
+  --ink-2: #6b6b63;
+  --ink-3: #a2a29a;
+  --line: #e6e6df;
+  --accent: #2f7a3e; /* 草 */
+  --warn: #b4451f;
+
+  --pad: 16px;
+  --bar-h: 44px;
+  --radius: 4px;
+
+  --font: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Hiragino Kaku Gothic ProN",
+    "Noto Sans JP", "Yu Gothic", sans-serif;
+
+  /* 実際に見えている高さ。ソフトキーボードが出ると JS がこれを縮める */
+  --vh: 100dvh;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -webkit-text-size-adjust: 100%;
+}
+
+.app {
+  height: var(--vh);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* ─── 画面 ───────────────────────────────────────────── */
+
+.view {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.center {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: stretch;
+  gap: 20px;
+  padding: var(--pad);
+  padding-bottom: calc(var(--pad) + env(safe-area-inset-bottom));
+  overflow-y: auto;
+}
+
+.scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: var(--pad);
+  padding-bottom: calc(var(--pad) + env(safe-area-inset-bottom));
+}
+
+/* ─── バー ───────────────────────────────────────────── */
+
+.bar {
+  height: var(--bar-h);
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  padding-top: env(safe-area-inset-top);
+  height: calc(var(--bar-h) + env(safe-area-inset-top));
+  border-bottom: 1px solid var(--line);
+  background: var(--paper);
+}
+
+.bar-title {
+  flex: 1;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bar-title b {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.12em;
+}
+
+.bar-back,
+.bar-right {
+  flex: none;
+  background: none;
+  border: 0;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 14px;
+  padding: 8px;
+  margin: -8px;
+  cursor: pointer;
+}
+.bar-back {
+  font-size: 20px;
+  line-height: 1;
+}
+.bar-right.link {
+  color: var(--accent);
+}
+
+/* プレイ中のバーは「何枚目 / お題 / 残り秒」だけ */
+.play-bar {
+  display: grid;
+  grid-template-columns: 44px 1fr 44px;
+  gap: 8px;
+}
+.play-bar .round {
+  font-size: 12px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.play-bar .topic {
+  text-align: center;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.play-bar .topic.masked {
+  color: var(--ink-3);
+  font-weight: 400;
+  font-size: 14px;
+}
+.play-bar .timer {
+  text-align: right;
+  font-size: 17px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.play-bar .timer.urgent {
+  color: var(--warn);
+}
+
+/* ─── キャンバス ─────────────────────────────────────── */
+
+.stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  background: var(--paper);
+  overflow: hidden;
+}
+
+#board {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+/* 回答は流れるログではなく、キャンバスの上に浮かんで消える吹き出しにする
+   (縦画面ではチャット欄を常設する面積がないため) */
+.bubbles {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+  padding: 0 12px;
+}
+
+.bubble {
+  max-width: 90%;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: var(--sunk);
+  border: 1px solid var(--line);
+  font-size: 14px;
+  color: var(--ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  animation: rise 0.2s ease-out;
+}
+.bubble b {
+  color: var(--ink-3);
+  font-weight: 400;
+  font-size: 12px;
+  margin-right: 6px;
+}
+.bubble.correct {
+  background: var(--paper);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 700;
+}
+.bubble.notice {
+  border-style: dashed;
+}
+.bubble.leaving {
+  opacity: 0;
+  transition: opacity 0.4s linear;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bubble {
+    animation: none;
+  }
+}
+
+/* 答え合わせのかぶせ */
+.veil {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.94);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--pad);
+}
+.veil-inner {
+  text-align: center;
+  max-width: 320px;
+}
+.veil-label {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink-3);
+}
+.veil-topic {
+  margin: 4px 0 16px;
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.veil-list {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.veil-list li {
+  font-size: 14px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 4px;
+}
+.veil-list li span:last-child {
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+.veil-list li.none {
+  justify-content: center;
+  color: var(--ink-3);
+  border-bottom: 0;
+}
+
+/* ─── どうぐ（描き手） ───────────────────────────────── */
+
+.tools {
+  flex: none;
+  border-top: 1px solid var(--line);
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--paper);
+}
+
+.swatches {
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.swatch {
+  flex: 1;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0;
+  cursor: pointer;
+  position: relative;
+}
+.swatch[aria-pressed='true'] {
+  box-shadow: inset 0 0 0 2px var(--paper), inset 0 0 0 4px var(--ink);
+}
+.swatch.eraser::after {
+  content: '消';
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.tool-btns {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.widths {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}
+.width {
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  padding: 0;
+}
+.width[aria-pressed='true'] {
+  border-color: var(--ink);
+}
+.width i {
+  display: block;
+  background: var(--ink);
+  border-radius: 999px;
+}
+
+.tool {
+  flex: 1;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.tool:active {
+  background: var(--sunk);
+}
+
+/* ─── 回答（回答者） ─────────────────────────────────── */
+
+.guessarea {
+  flex: none;
+  border-top: 1px solid var(--line);
+  padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+  background: var(--paper);
+}
+
+.guesshint {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: var(--ink-3);
+  text-align: center;
+}
+
+.guessbar {
+  display: flex;
+  gap: 8px;
+}
+
+#guess {
+  flex: 1;
+  min-width: 0;
+  height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--sunk);
+  color: var(--ink);
+  font: inherit;
+  font-size: 17px; /* 16px 未満だと iOS が勝手にズームする */
+}
+#guess:focus {
+  outline: none;
+  border-color: var(--ink);
+  background: var(--paper);
+}
+#guess::placeholder {
+  color: var(--ink-3);
+}
+#guess:disabled {
+  color: var(--ink-3);
+}
+
+.send {
+  flex: none;
+  height: 44px;
+  padding: 0 18px;
+  border: 1px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--ink);
+  color: var(--paper);
+  font: inherit;
+  font-size: 15px;
+  cursor: pointer;
+}
+.send:disabled {
+  opacity: 0.35;
+}
+
+/* 正解したあと */
+.guessarea.solved .guesshint {
+  color: var(--accent);
+}
+
+/* ─── 得点の帯 ───────────────────────────────────────── */
+
+.scorestrip {
+  flex: none;
+  display: flex;
+  gap: 12px;
+  padding: 6px 12px;
+  border-top: 1px solid var(--line);
+  overflow-x: auto;
+  scrollbar-width: none;
+  background: var(--paper);
+}
+.scorestrip::-webkit-scrollbar {
+  display: none;
+}
+.chip {
+  flex: none;
+  font-size: 12px;
+  color: var(--ink-3);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.chip b {
+  color: var(--ink);
+  font-weight: 600;
+}
+.chip.drawer b {
+  color: var(--warn);
+}
+.chip.solved b {
+  color: var(--accent);
+}
+.chip.off {
+  opacity: 0.4;
+}
+
+/* ─── パーツ ─────────────────────────────────────────── */
+
+.logo {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-align: center;
+}
+
+.tagline {
+  margin: 0;
+  text-align: center;
+  color: var(--ink-2);
+  font-size: 15px;
+  line-height: 1.9;
+}
+
+.status {
+  margin: 0;
+  text-align: center;
+  color: var(--ink-2);
+  font-size: 14px;
+}
+
+.note {
+  margin: 0;
+  text-align: center;
+  color: var(--ink-3);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.btn {
+  width: 100%;
+  min-height: 48px;
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px;
+  cursor: pointer;
+}
+.btn:active {
+  background: var(--sunk);
+}
+.btn.primary {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
+.btn.ghost {
+  border-style: dashed;
+  color: var(--ink-2);
+}
+.btn.quiet {
+  border: 0;
+  color: var(--ink-3);
+  font-size: 13px;
+  min-height: 36px;
+}
+.btn:disabled {
+  opacity: 0.4;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.field-label {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.field input {
+  height: 48px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--sunk);
+  font: inherit;
+  font-size: 17px;
+  color: var(--ink);
+}
+.field input:focus {
+  outline: none;
+  border-color: var(--ink);
+  background: var(--paper);
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.check input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--ink);
+}
+
+.foot {
+  flex: none;
+  padding: 12px var(--pad) calc(12px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line);
+}
+
+.players {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border-top: 1px solid var(--line);
+}
+.players li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 4px;
+  border-bottom: 1px solid var(--line);
+  font-size: 15px;
+}
+.players .tag {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.players .tag.ok {
+  color: var(--accent);
+}
+
+.ranking {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--line);
+}
+.ranking li {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 4px;
+  border-bottom: 1px solid var(--line);
+}
+.ranking .rank {
+  font-size: 13px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.ranking .score {
+  font-size: 17px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.ranking li.mvp .rank {
+  color: var(--accent);
+}
+.ranking li.mvp .name::after {
+  content: 'MVP';
+  margin-left: 8px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 2px;
+  padding: 1px 4px;
+}
+
+/* ─── ギャラリー ─────────────────────────────────────── */
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+  /* 絵の縦横比がまちまちなので、カードは行の高さに引き伸ばさない */
+  align-items: start;
+}
+
+.card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--paper);
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  display: flex;
+  flex-direction: column;
+}
+.card canvas {
+  display: block;
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
+}
+.card-body {
+  padding: 8px 10px 10px;
+}
+.card-topic {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.card-meta {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: var(--ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.card-meta .ok {
+  color: var(--accent);
+}
+
+/* ─── 作品の拡大 ─────────────────────────────────────── */
+
+.sheet {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 20, 15, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--pad);
+  z-index: 20;
+}
+.sheet-card {
+  background: var(--paper);
+  border-radius: var(--radius);
+  padding: 12px;
+  width: 100%;
+  max-width: 380px;
+  max-height: 100%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+#sheet-canvas {
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  display: block;
+}
+.sheet-topic {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  text-align: center;
+}
+.sheet-meta {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ink-3);
+  text-align: center;
+}
+
+/* ─── トースト ───────────────────────────────────────── */
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(24px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 14px;
+  padding: 10px 16px;
+  border-radius: var(--radius);
+  z-index: 30;
+  max-width: 90%;
+  text-align: center;
+}
+
+.diag {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--ink-2);
+  background: var(--sunk);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 10px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 200px;
+  overflow-y: auto;
+}
