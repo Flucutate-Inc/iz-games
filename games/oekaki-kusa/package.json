@@ -1,0 +1,15 @@
+{
+  "name": "oekaki-kusa",
+  "version": "1.0.0",
+  "private": true,
+  "description": "お絵かきの草 — 完全スマホ向けのエゴコロクイズ",
+  "scripts": {
+    "assets": "bash worker/build-assets.sh",
+    "dev": "npm run assets && wrangler dev",
+    "deploy": "npm run assets && wrangler deploy",
+    "test": "node --test --test-force-exit --test-reporter=spec test/*.test.js"
+  },
+  "devDependencies": {
+    "wrangler": "^4.20.0"
+  }
+}

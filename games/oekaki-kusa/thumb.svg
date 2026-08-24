@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 320" width="320" height="320" role="img" aria-label="お絵かきの草">
+  <rect width="320" height="320" fill="#ffffff"/>
+  <rect x="0.5" y="0.5" width="319" height="319" fill="none" stroke="#e6e6df"/>
+  <!-- 手描きの草。フリーハンドだけ、という設計をそのまま絵にしている -->
+  <g fill="none" stroke="#14140f" stroke-width="11" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M160 246 C158 200 150 168 132 136"/>
+    <path d="M160 246 C168 198 186 166 214 140"/>
+    <path d="M160 246 C142 214 118 196 88 186"/>
+  </g>
+  <g fill="none" stroke="#2f7a3e" stroke-width="11" stroke-linecap="round">
+    <path d="M132 136 C120 120 116 104 120 88"/>
+    <path d="M214 140 C226 124 232 108 230 92"/>
+  </g>
+  <!-- 回答の吹き出し -->
+  <rect x="86" y="262" width="148" height="34" rx="17" fill="#ffffff" stroke="#e6e6df" stroke-width="3"/>
+  <text x="160" y="285" text-anchor="middle" font-family="Hiragino Sans, Noto Sans JP, sans-serif" font-size="19" fill="#6b6b63">くさ？</text>
+</svg>

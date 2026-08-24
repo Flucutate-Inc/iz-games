@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#ffffff" />
+    <title>お絵かきの草</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <div class="app" id="app">
+      <!-- ══ 起動・ログイン ══ -->
+      <section class="view" id="view-boot">
+        <div class="center">
+          <h1 class="logo">お絵かきの草</h1>
+          <p class="status" id="boot-status">よみこみちゅう…</p>
+
+          <div class="stack hidden" id="boot-login">
+            <p class="note" id="boot-note"></p>
+            <label class="field">
+              <span class="field-label">なまえ</span>
+              <input id="guest-name" type="text" maxlength="12" placeholder="ゲスト" autocomplete="off" />
+            </label>
+            <button class="btn primary" id="btn-guest">このなまえではじめる</button>
+            <button class="btn ghost hidden" id="btn-iz-retry">IZアカウントで再試行</button>
+            <button class="btn quiet" id="btn-diag">くわしい情報</button>
+            <pre class="diag hidden" id="diag-body"></pre>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══ ホーム ══ -->
+      <section class="view hidden" id="view-home">
+        <header class="bar">
+          <span class="bar-title">お絵かきの草</span>
+          <span class="bar-right" id="home-me"></span>
+        </header>
+        <div class="center">
+          <!-- いままで投稿された絵を背景にうっすら流す(タップは通さない) -->
+          <div class="home-bg" id="home-bg" aria-hidden="true"></div>
+          <p class="tagline">おだいを絵で伝える。<br />ひらがなで当てる。</p>
+          <div class="stack">
+            <button class="btn primary" id="btn-match">みんなとあそぶ</button>
+            <button class="btn" id="btn-code">合言葉で参加</button>
+            <button class="btn" id="btn-solo">ひとりでかく</button>
+            <button class="btn" id="btn-gallery">ギャラリー</button>
+          </div>
+          <p class="note" id="home-stats"></p>
+        </div>
+        <footer class="foot">
+          <label class="check">
+            <input type="checkbox" id="opt-nodraw" />
+            <span>描き手をやらない（回答だけ）</span>
+          </label>
+        </footer>
+      </section>
+
+      <!-- ══ 待機 ══ -->
+      <section class="view hidden" id="view-wait">
+        <header class="bar">
+          <button class="bar-back" id="wait-back" aria-label="もどる">←</button>
+          <span class="bar-title">合言葉 <b id="wait-code">----</b></span>
+          <button class="bar-right link" id="wait-share">コピー</button>
+        </header>
+        <div class="center">
+          <p class="status" id="wait-status">ほかの人をまっています…</p>
+          <ul class="players" id="wait-players"></ul>
+          <button class="btn primary" id="btn-ready">じゅんびOK</button>
+          <p class="note">全員が「じゅんびOK」になると始まります。2〜6人。</p>
+        </div>
+      </section>
+
+      <!-- ══ プレイ（縦画面いっぱいのキャンバス） ══ -->
+      <section class="view hidden" id="view-play">
+        <header class="bar play-bar">
+          <span class="round" id="play-round">1/3</span>
+          <span class="topic" id="play-topic">…</span>
+          <span class="timer" id="play-timer">60</span>
+        </header>
+
+        <div class="stage" id="stage">
+          <canvas id="board"></canvas>
+          <div class="bubbles" id="bubbles" aria-live="polite"></div>
+          <div class="veil hidden" id="veil">
+            <div class="veil-inner">
+              <p class="veil-label" id="veil-label"></p>
+              <p class="veil-topic" id="veil-topic"></p>
+              <ul class="veil-list" id="veil-list"></ul>
+              <p class="note" id="veil-next"></p>
+            </div>
+          </div>
+        </div>
+
+        <!-- 描き手のどうぐ（原作どおりフリーハンドのみ） -->
+        <div class="tools hidden" id="tools">
+          <div class="swatches" id="swatches"></div>
+          <div class="tool-btns">
+            <div class="widths" id="widths"></div>
+            <button class="tool" id="btn-undo" aria-label="ひとつもどす">もどす</button>
+            <button class="tool" id="btn-clear" aria-label="ぜんぶ消す">全消し</button>
+          </div>
+        </div>
+
+        <!-- 回答者の入力 -->
+        <div class="guessarea hidden" id="guessarea">
+          <p class="guesshint">必ずひらがなで入力してください</p>
+          <form class="guessbar" id="guess-form" autocomplete="off">
+            <input
+              id="guess"
+              type="text"
+              inputmode="kana"
+              lang="ja"
+              maxlength="24"
+              placeholder="こたえをひらがなで"
+              autocomplete="off"
+              autocorrect="off"
+              autocapitalize="off"
+              spellcheck="false"
+              enterkeyhint="send"
+            />
+            <button class="send" type="submit" id="guess-send">送信</button>
+          </form>
+        </div>
+
+        <div class="scorestrip" id="scorestrip"></div>
+      </section>
+
+      <!-- ══ 推薦コーナー（原作の "みんなのおえかき" への推薦） ══ -->
+      <section class="view hidden" id="view-recommend">
+        <header class="bar">
+          <span class="bar-title">すいせん</span>
+          <span class="bar-right timer-inline" id="recommend-timer"></span>
+        </header>
+        <div class="scroll">
+          <p class="note" id="recommend-hint">
+            いちばん好きな1枚をえらんで、コメントをそえよう（自分の絵は選べません）
+          </p>
+          <div class="grid" id="recommend-grid"></div>
+          <label class="field">
+            <span class="field-label">コメント（にんい）</span>
+            <input
+              id="recommend-comment"
+              type="text"
+              maxlength="80"
+              placeholder="どうしてこうなった!?"
+              autocomplete="off"
+            />
+          </label>
+          <div class="stack">
+            <button class="btn primary" id="btn-recommend-send" disabled>推薦する</button>
+          </div>
+          <p class="note" id="recommend-waiting"></p>
+        </div>
+      </section>
+
+      <!-- ══ 投稿画面（推薦された本人だけが見る） ══ -->
+      <section class="view hidden" id="view-post">
+        <header class="bar">
+          <span class="bar-title">とうこう</span>
+          <span class="bar-right timer-inline" id="post-timer"></span>
+        </header>
+        <div class="scroll">
+          <p class="note">あなたの絵が推薦されました！公開しますか？</p>
+          <canvas id="post-canvas" class="preview-canvas"></canvas>
+          <p class="sheet-topic" id="post-topic"></p>
+          <p class="field-label" id="post-comments-label"></p>
+          <ul class="comments" id="post-comments"></ul>
+          <div class="stack">
+            <button class="btn primary" id="btn-post-yes">投稿する</button>
+            <button class="btn ghost" id="btn-post-no">投稿しない</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══ 結果 ══ -->
+      <section class="view hidden" id="view-result">
+        <header class="bar">
+          <span class="bar-title">けっか</span>
+          <button class="bar-right link" id="result-home">ホーム</button>
+        </header>
+        <div class="center">
+          <ol class="ranking" id="ranking"></ol>
+          <div class="stack">
+            <button class="btn primary" id="btn-again">もういちど</button>
+            <button class="btn" id="btn-result-gallery">この回の絵を見る</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══ ひとりでかく（お題を1つ選ぶ） ══ -->
+      <section class="view hidden" id="view-solo-topic">
+        <header class="bar">
+          <button class="bar-back" id="solo-topic-back" aria-label="もどる">←</button>
+          <span class="bar-title">ひとりでかく</span>
+          <span class="bar-right"></span>
+        </header>
+        <div class="center">
+          <p class="note">このお題を絵にしてみよう</p>
+          <p class="solo-topic-label" id="solo-topic-label">…</p>
+          <div class="stack">
+            <button class="btn primary" id="btn-solo-start">これでかく</button>
+            <button class="btn ghost" id="btn-solo-reroll">べつのお題にする</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══ ひとりでかく（縦画面いっぱいのキャンバス。時間制限なし） ══ -->
+      <section class="view hidden" id="view-solo-draw">
+        <header class="bar">
+          <button class="bar-back" id="solo-draw-back" aria-label="やめる">←</button>
+          <span class="bar-title" id="solo-draw-topic">…</span>
+          <button class="bar-right link" id="btn-solo-post">とうこう</button>
+        </header>
+        <div class="stage">
+          <canvas id="solo-board"></canvas>
+        </div>
+        <div class="tools" id="solo-tools">
+          <div class="swatches" id="solo-swatches"></div>
+          <div class="tool-btns">
+            <div class="widths" id="solo-widths"></div>
+            <button class="tool" id="btn-solo-undo" aria-label="ひとつもどす">もどす</button>
+            <button class="tool" id="btn-solo-clear" aria-label="ぜんぶ消す">全消し</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══ ギャラリー ══ -->
+      <section class="view hidden" id="view-gallery">
+        <header class="bar">
+          <button class="bar-back" id="gallery-back" aria-label="もどる">←</button>
+          <span class="bar-title">ギャラリー</span>
+          <button class="bar-right link" id="gallery-mine">じぶんの</button>
+        </header>
+        <div class="scroll" id="gallery-scroll">
+          <div class="grid" id="gallery-grid"></div>
+          <p class="note" id="gallery-empty"></p>
+          <button class="btn ghost hidden" id="gallery-more">もっと見る</button>
+        </div>
+      </section>
+
+      <!-- ══ 作品の拡大 ══ -->
+      <div class="sheet hidden" id="sheet">
+        <div class="sheet-card">
+          <canvas id="sheet-canvas"></canvas>
+          <p class="sheet-topic" id="sheet-topic"></p>
+          <p class="sheet-meta" id="sheet-meta"></p>
+          <ul class="sheet-comments" id="sheet-comments"></ul>
+          <button class="btn" id="sheet-close">とじる</button>
+        </div>
+      </div>
+
+      <div class="toast hidden" id="toast"></div>
+    </div>
+
+    <script src="/sdk/iz-sdk.js"></script>
+    <script src="./js/kana.js"></script>
+    <script src="./js/net.js"></script>
+    <script src="./js/draw.js"></script>
+    <script src="./js/app.js"></script>
+  </body>
+</html>
