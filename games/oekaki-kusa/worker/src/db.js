@@ -70,6 +70,20 @@ export class Db {
       created_at   TEXT NOT NULL DEFAULT (datetime('now'))
     )`);
     this.sql.exec('CREATE INDEX IF NOT EXISTS idx_comments_drawing ON comments (drawing_id, id)');
+
+    // 月間絵しりとり。month('2026-08') ごとに1本のチェーンを seq でつなぐ
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS shiritori_entries (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      month        TEXT NOT NULL,
+      seq          INTEGER NOT NULL,
+      user_id      INTEGER NOT NULL,
+      display_name TEXT NOT NULL,
+      word         TEXT NOT NULL,
+      strokes_json TEXT NOT NULL,
+      created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (month, seq)
+    )`);
+    this.sql.exec('CREATE INDEX IF NOT EXISTS idx_shiritori_month ON shiritori_entries (month, seq)');
   }
 
   // ─── アカウント ──────────────────────────────────────────
@@ -248,6 +262,70 @@ export class Db {
   drawingExists(id) {
     return !!this.sql.exec('SELECT 1 FROM drawings WHERE id = ?', id).toArray()[0];
   }
+
+  // ─── 月間絵しりとり ──────────────────────────────────────
+
+  shiritoriLast(month) {
+    const row = this.sql
+      .exec('SELECT * FROM shiritori_entries WHERE month = ? ORDER BY seq DESC LIMIT 1', month)
+      .toArray()[0];
+    return row ? publicShiritoriEntry(row) : null;
+  }
+
+  shiritoriChain(month) {
+    return this.sql
+      .exec('SELECT * FROM shiritori_entries WHERE month = ? ORDER BY seq ASC', month)
+      .toArray()
+      .map(publicShiritoriEntry);
+  }
+
+  shiritoriParticipated(month, userId) {
+    return !!this.sql
+      .exec('SELECT 1 FROM shiritori_entries WHERE month = ? AND user_id = ? LIMIT 1', month, userId)
+      .toArray()[0];
+  }
+
+  /**
+   * 1枚つなぐ。seq の UNIQUE 制約で同時投稿の後勝ちを防ぐ
+   * (DO はシングルスレッドなので実際には API 層の prevSeq 検査で先に弾かれる)。
+   */
+  shiritoriAppend({ month, seq, userId, displayName, word, strokes, ar }) {
+    this.sql.exec(
+      `INSERT INTO shiritori_entries (month, seq, user_id, display_name, word, strokes_json)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      month,
+      seq,
+      userId,
+      displayName,
+      word,
+      JSON.stringify({ ar: ar || 4 / 3, strokes }),
+    );
+    const row = this.sql
+      .exec('SELECT * FROM shiritori_entries WHERE id = last_insert_rowid()')
+      .toArray()[0];
+    return publicShiritoriEntry(row);
+  }
+}
+
+export function publicShiritoriEntry(row) {
+  let ar = 4 / 3;
+  let strokes = [];
+  try {
+    const parsed = JSON.parse(row.strokes_json);
+    strokes = parsed.strokes || [];
+    if (parsed.ar) ar = parsed.ar;
+  } catch {
+    strokes = [];
+  }
+  return {
+    seq: row.seq,
+    userId: row.user_id,
+    displayName: row.display_name,
+    word: row.word,
+    ar,
+    strokes,
+    createdAt: row.created_at,
+  };
 }
 
 export function publicDrawing(row) {

@@ -46,6 +46,7 @@
             <button class="btn primary" id="btn-match">みんなとあそぶ</button>
             <button class="btn" id="btn-code">合言葉で参加</button>
             <button class="btn" id="btn-solo">ひとりでかく</button>
+            <button class="btn" id="btn-shiritori">絵しりとり</button>
             <button class="btn" id="btn-gallery">ギャラリー</button>
           </div>
           <p class="note" id="home-stats"></p>
@@ -204,6 +205,70 @@
             <div class="widths" id="solo-widths"></div>
             <button class="tool" id="btn-solo-undo" aria-label="ひとつもどす">もどす</button>
             <button class="tool" id="btn-solo-clear" aria-label="ぜんぶ消す">全消し</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══ 月間絵しりとり（状態・チェーン） ══ -->
+      <section class="view hidden" id="view-shiritori">
+        <header class="bar">
+          <button class="bar-back" id="shiritori-back" aria-label="もどる">←</button>
+          <span class="bar-title" id="shiritori-title">絵しりとり</span>
+          <button class="bar-right link" id="shiritori-reload">更新</button>
+        </header>
+        <div class="scroll">
+          <p class="note" id="shiritori-status">よみこみちゅう…</p>
+
+          <!-- 最後の絵(未参加でも見える。ことばは伏せる) -->
+          <div class="shiri-last hidden" id="shiri-last">
+            <canvas id="shiri-last-canvas" class="preview-canvas"></canvas>
+            <p class="sheet-meta" id="shiri-last-meta"></p>
+            <p class="shiri-next" id="shiri-next"></p>
+          </div>
+
+          <div class="stack">
+            <button class="btn primary" id="btn-shiri-draw">つづきをかく</button>
+          </div>
+          <p class="note" id="shiri-hint"></p>
+
+          <!-- 参加済みならその月のチェーン全体 -->
+          <div class="hidden" id="shiri-chain-wrap">
+            <p class="field-label" id="shiri-chain-label"></p>
+            <ol class="shiri-chain" id="shiri-chain"></ol>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══ 月間絵しりとり（かく） ══ -->
+      <section class="view hidden" id="view-shiritori-draw">
+        <header class="bar">
+          <button class="bar-back" id="shiri-draw-back" aria-label="やめる">←</button>
+          <span class="bar-title" id="shiri-draw-title">絵しりとり</span>
+          <button class="bar-right link" id="btn-shiri-post">つなぐ</button>
+        </header>
+        <div class="wordarea">
+          <input
+            id="shiri-word"
+            type="text"
+            inputmode="kana"
+            lang="ja"
+            maxlength="12"
+            placeholder="ことばをひらがなで"
+            autocomplete="off"
+            autocorrect="off"
+            autocapitalize="off"
+            spellcheck="false"
+          />
+        </div>
+        <div class="stage">
+          <canvas id="shiri-board"></canvas>
+        </div>
+        <div class="tools" id="shiri-tools">
+          <div class="swatches" id="shiri-swatches"></div>
+          <div class="tool-btns">
+            <div class="widths" id="shiri-widths"></div>
+            <button class="tool" id="btn-shiri-undo" aria-label="ひとつもどす">もどす</button>
+            <button class="tool" id="btn-shiri-clear" aria-label="ぜんぶ消す">全消し</button>
           </div>
         </div>
       </section>

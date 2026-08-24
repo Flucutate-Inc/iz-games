@@ -95,7 +95,8 @@ boot ──IZ自動ログイン成功──▶ home ──みんなとあそぶ�
 - `recommend`: 最終ラウンドの答え合わせのあと、その試合の絵から1人1票で推薦する（§5.1）。
   推薦はその絵へのいいね+コメントとして記録され、結果画面へ進む。
 - `result`: 順位と MVP。「もういちど」で同じ部屋の待機に戻る。
-- `solo-topic` / `solo-draw`: 対戦とは独立した「ひとりでかく」の入口（§5.2）。
+- `solo-topic` / `solo-draw`: 対戦とは独立した「ひとりでかく」の入口（§5.3）。
+- `shiritori` / `shiritori-draw`: 月間絵しりとり（§5.2）。ホームから入る。
 - `gallery`: みんなの作品／自分の作品を切り替えて見る。タップで拡大し、
   いいね・コメント・シェアができる。
 
@@ -171,7 +172,24 @@ stroke = { id, u: userId, c: 色番号, w: 太さ番号, p: [x0,y0, x1,y1, ...] 
 - `drawings.posted` / `comments_json` は旧ゲート方式の名残カラム。読み書きしないが、
   既存デプロイの DB を壊さないため定義は残してある。
 
-### 5.2 ひとりでかく
+### 5.2 月間絵しりとり(非同期コンテンツの第一弾)
+
+研究 問題D「6人同時が集まらない」への答え。**月(JST)ごとに1本のチェーン**を、
+リアルタイムに集まらなくてもみんなで繋ぐ。
+
+- 見えるもの: 最後の絵 + 「つぎの頭文字」。**ことばは参加するまで伏せる**
+  (絵がなにかを想像しながら繋ぐ=命題1の伝達誤差。参加が「全体を見る」鍵になる)。
+- ルール: ひらがなのみ(最大12字)。「ん」終わり不可。長音は飛ばす(「ぎたー」→「た」)。
+  小書きは大書き(「かぼちゃ」→「や」)。濁点・半濁点の揺れは許容。
+  **同じ人は連続でつなげない**(誰かの更新を待つ)。判定は `worker/src/kana.js` の
+  `shiritoriNextChar / shiritoriConnects / shiritoriEndsWithN`。
+- 競合: 楽観ロック。POST に `prevSeq`(自分が見た最後の番号)を積み、サーバーの最新と
+  ズレていれば 409 + 最新の頭文字を返す。クライアントは絵を保持したまま出し直せる。
+- DB: `shiritori_entries (month, seq UNIQUE, user_id, display_name, word, strokes_json)`。
+- API: `GET /api/shiritori`(今月の状態) / `POST /api/shiritori`。
+- 過去月の閲覧は未実装(将来の拡張)。
+
+### 5.3 ひとりでかく
 
 - `GET /api/topics/random` でお題を1つもらう（読みは返さない。判定が無いので不要）。
   気に入らなければ何度でも引き直せる。
@@ -192,6 +210,7 @@ Cloudflare Workers + Durable Object。DO は `main` の1個だけ使う
   `/api/drawings/:id`（単品。シェアリンク用） `/api/drawings/:id/like`（いいねトグル）
   `/api/drawings/:id/comments`（コメント一覧・追加）
   `/api/topics/random`（ソロ用） `/api/solo-post`（ソロの投稿）
+  `/api/shiritori`（月間絵しりとりの状態・投稿）
 - WebSocket: `/ws?t=<セッショントークン>`。対戦中のメッセージ種別は
   `join / leave / ready / noDraw / s0 / s+ / undo / clear / guess / recommend / restart`。
 - **再接続**: スマホは通信が切れやすい。net.js の自動再接続で WebSocket は繋ぎ直るが、

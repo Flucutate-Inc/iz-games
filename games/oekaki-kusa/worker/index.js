@@ -13,7 +13,17 @@ import topicsData from '../data/topics.json';
 import { Db, publicUser } from './src/db.js';
 import { Rooms, RULES, sanitizeStrokes } from './src/game.js';
 import { verifyIdToken, allowedProjects } from './src/firebase-auth.js';
-import { toHiraganaOnly } from './src/kana.js';
+import {
+  toHiraganaOnly,
+  shiritoriNextChar,
+  shiritoriConnects,
+  shiritoriEndsWithN,
+} from './src/kana.js';
+
+/** 月間絵しりとりの区切り。日本のユーザー向けなので JST(UTC+9) の月で切る */
+function currentShiritoriMonth() {
+  return new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 7);
+}
 
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' };
 
@@ -185,6 +195,89 @@ export class GameServer {
           return json({ comment });
         }
       }
+    }
+
+    // ─── 月間絵しりとり ────────────────────────────────────
+    //
+    // 月ごとに1本のチェーン。リアルタイムに集まらなくても、誰かが最後に描いた絵を見て
+    // 自分のことばを描いて繋ぐ。**参加するまで、ことばは伏せる**(最後の絵と「次の頭文字」
+    // だけが見える)。参加すると、その月のチェーン全体(絵+ことば+名前)が見られる。
+
+    if (path === '/api/shiritori' && request.method === 'GET') {
+      const user = this.userFromRequest(request, url);
+      if (!user) return errorJson('認証が必要です', 401);
+      const month = currentShiritoriMonth();
+      const last = this.db.shiritoriLast(month);
+      const participated = this.db.shiritoriParticipated(month, user.id);
+      return json({
+        month,
+        count: last ? last.seq : 0,
+        participated,
+        last: last
+          ? {
+              seq: last.seq,
+              displayName: last.displayName,
+              isMine: last.userId === user.id,
+              strokes: last.strokes,
+              ar: last.ar,
+              // ことばそのものは伏せて、しりとりに要る頭文字だけ教える
+              nextChar: shiritoriNextChar(last.word),
+              word: participated ? last.word : null,
+            }
+          : null,
+        chain: participated ? this.db.shiritoriChain(month) : null,
+      });
+    }
+
+    if (path === '/api/shiritori' && request.method === 'POST') {
+      const user = this.userFromRequest(request, url);
+      if (!user) return errorJson('認証が必要です', 401);
+      const body = await request.json().catch(() => ({}));
+
+      const month = currentShiritoriMonth();
+      const last = this.db.shiritoriLast(month);
+
+      // 楽観ロック: クライアントが見た最後の seq とズレていたら「先に繋がれた」
+      const prevSeq = Number(body.prevSeq) || 0;
+      const currentSeq = last ? last.seq : 0;
+      if (prevSeq !== currentSeq) {
+        return json(
+          {
+            error: last ? `${last.displayName}さんが先につなぎました` : 'しりとりが更新されています',
+            conflict: true,
+            nextChar: last ? shiritoriNextChar(last.word) : null,
+            currentSeq,
+          },
+          409,
+        );
+      }
+
+      if (last && last.userId === user.id) {
+        return errorJson('じぶんの絵にはつなげられません。だれかが描くのをまとう', 403);
+      }
+
+      const word = toHiraganaOnly(body.word).slice(0, 12);
+      if (!word) return errorJson('ことばをひらがなで入れてください', 400);
+      if (shiritoriEndsWithN(word)) return errorJson('「ん」で終わることばは出せません', 400);
+      if (last && !shiritoriConnects(last.word, word)) {
+        return errorJson(`「${shiritoriNextChar(last.word)}」からはじまることばにしてください`, 400);
+      }
+
+      const strokes = sanitizeStrokes(body.strokes);
+      if (!strokes.length) return errorJson('絵が描かれていません', 400);
+      const ar = Number(body.ar);
+
+      const entry = this.db.shiritoriAppend({
+        month,
+        seq: currentSeq + 1,
+        userId: user.id,
+        displayName: user.display_name,
+        word,
+        strokes,
+        ar: Number.isFinite(ar) && ar > 0.2 && ar < 5 ? ar : 4 / 3,
+      });
+      // 参加したので、その月のチェーン全体を返す
+      return json({ entry, month, chain: this.db.shiritoriChain(month) });
     }
 
     // ソロモード用のお題(1件)。答え合わせがないので label だけ返す

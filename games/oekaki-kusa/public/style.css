@@ -972,3 +972,85 @@ body {
   text-align: center;
   letter-spacing: 0.02em;
 }
+
+/* ─── 月間絵しりとり ─────────────────────────────────── */
+
+.shiri-last {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.shiri-next {
+  margin: 0;
+  text-align: center;
+  font-size: 16px;
+}
+.shiri-next b {
+  font-size: 24px;
+  font-weight: 700;
+  padding: 0 2px;
+}
+
+/* かく画面のことば入力(ヘッダー直下の1行) */
+.wordarea {
+  flex: none;
+  border-bottom: 1px solid var(--line);
+  padding: 8px 12px;
+  background: var(--paper);
+}
+#shiri-word {
+  width: 100%;
+  height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--sunk);
+  color: var(--ink);
+  font: inherit;
+  font-size: 17px; /* 16px 未満だと iOS が勝手にズームする */
+}
+#shiri-word:focus {
+  outline: none;
+  border-color: var(--ink);
+  background: var(--paper);
+}
+
+/* 参加済みのチェーン表示 */
+.shiri-chain {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.shiri-chain li {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--paper);
+}
+.shiri-chain canvas {
+  display: block;
+  width: 100%;
+  border-bottom: 1px solid var(--line);
+}
+.shiri-chain .shiri-entry-body {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+}
+.shiri-chain .shiri-word {
+  font-size: 16px;
+  font-weight: 700;
+}
+.shiri-chain .shiri-who {
+  font-size: 12px;
+  color: var(--ink-3);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}

@@ -35,6 +35,8 @@
     var h = vv ? vv.height : window.innerHeight;
     document.documentElement.style.setProperty('--vh', h + 'px');
     if (state.board) state.board.resize();
+    if (state.soloBoard) state.soloBoard.resize();
+    if (typeof shiriBoard !== 'undefined' && shiriBoard) shiriBoard.resize();
   }
 
   if (vv) {
@@ -723,6 +725,180 @@
     }
   }
 
+  // ══ 月間絵しりとり ════════════════════════════════════════
+  //
+  // 月ごとに1本のチェーン。リアルタイムに集まらなくても、誰かが最後に描いた絵を見て
+  // 自分のことばを描いて繋ぐ。ことばは参加するまで伏せられていて(絵から推測する楽しみ)、
+  // 参加するとその月のしりとり全体(絵+ことば+名前)が見られる。
+
+  var shiritori = null; // GET /api/shiritori のレスポンス
+  var shiriBoard = null;
+
+  function monthLabel(month) {
+    var m = /^\d{4}-(\d{2})$/.exec(month || '');
+    return m ? parseInt(m[1], 10) + '月' : '';
+  }
+
+  async function openShiritori() {
+    show('shiritori');
+    $('shiritori-status').textContent = 'よみこみちゅう…';
+    $('shiri-last').classList.add('hidden');
+    $('shiri-chain-wrap').classList.add('hidden');
+    $('btn-shiri-draw').disabled = true;
+    await loadShiritori();
+  }
+
+  async function loadShiritori() {
+    try {
+      shiritori = await Net.api('/shiritori');
+    } catch (e) {
+      $('shiritori-status').textContent = '読み込めませんでした: ' + e.message;
+      return;
+    }
+    renderShiritori();
+  }
+
+  function renderShiritori() {
+    var s = shiritori;
+    if (!s) return;
+    $('shiritori-title').textContent = monthLabel(s.month) + 'の絵しりとり';
+
+    var drawBtn = $('btn-shiri-draw');
+    var last = s.last;
+
+    if (!last) {
+      $('shiritori-status').textContent = 'まだだれも描いていません。';
+      $('shiri-last').classList.add('hidden');
+      drawBtn.textContent = '最初の1枚をかく';
+      drawBtn.disabled = false;
+      $('shiri-hint').textContent = 'すきなことばを絵にして、しりとりをはじめよう。';
+    } else {
+      $('shiritori-status').textContent = 'いま ' + s.count + 'つ つながっています';
+      $('shiri-last').classList.remove('hidden');
+      var cv = $('shiri-last-canvas');
+      cv.style.aspectRatio = '1 / ' + Math.min(2.2, Math.max(0.6, last.ar || 4 / 3));
+      requestAnimationFrame(function () {
+        Draw.render(cv, last);
+      });
+      $('shiri-last-meta').textContent =
+        s.count + '番目 ・ ' + last.displayName + (last.isMine ? '（じぶん）' : '') +
+        (last.word ? ' ・ 「' + last.word + '」' : '');
+      $('shiri-next').innerHTML = 'つぎは「<b>' + esc(last.nextChar || '?') + '</b>」からはじまることば';
+
+      if (last.isMine) {
+        drawBtn.textContent = 'だれかがつなぐのをまとう';
+        drawBtn.disabled = true;
+        $('shiri-hint').textContent = 'じぶんの絵には つなげられません。';
+      } else {
+        drawBtn.textContent = 'つづきをかく';
+        drawBtn.disabled = false;
+        $('shiri-hint').textContent = last.word
+          ? ''
+          : 'この絵がなにか、想像しながらつなごう。';
+      }
+    }
+
+    // 参加済みならその月のチェーン全体
+    if (s.participated && s.chain && s.chain.length) {
+      $('shiri-chain-wrap').classList.remove('hidden');
+      $('shiri-chain-label').textContent = monthLabel(s.month) + 'のしりとり ぜんぶ（' + s.chain.length + 'つ）';
+      var ol = $('shiri-chain');
+      ol.innerHTML = '';
+      s.chain.forEach(function (entry) {
+        var li = document.createElement('li');
+        var cv = document.createElement('canvas');
+        cv.style.aspectRatio = '1 / ' + Math.min(2.2, Math.max(0.6, entry.ar || 4 / 3));
+        li.appendChild(cv);
+        var body = document.createElement('div');
+        body.className = 'shiri-entry-body';
+        body.innerHTML =
+          '<span class="shiri-word">' + esc(entry.word) + '</span>' +
+          '<span class="shiri-who">' + entry.seq + '番目 ・ ' + esc(entry.displayName) + '</span>';
+        li.appendChild(body);
+        ol.appendChild(li);
+        requestAnimationFrame(function () {
+          Draw.render(cv, entry);
+        });
+      });
+    } else {
+      $('shiri-chain-wrap').classList.add('hidden');
+      if (!s.participated && s.count > 0) {
+        $('shiri-hint').textContent =
+          ($('shiri-hint').textContent + ' 参加すると、この月のしりとり ぜんぶが見られます。').trim();
+      }
+    }
+  }
+
+  function ensureShiriBoard() {
+    if (shiriBoard) return shiriBoard;
+    shiriBoard = new Draw.Board($('shiri-board'), {});
+    shiriBoard.myUserId = state.me ? state.me.id : null;
+    buildPaintTools(shiriBoard, $('shiri-swatches'), $('shiri-widths'));
+    shiriBoard.resize();
+    return shiriBoard;
+  }
+
+  function enterShiritoriDraw() {
+    show('shiritori-draw');
+    var nextChar = shiritori && shiritori.last ? shiritori.last.nextChar : null;
+    $('shiri-draw-title').textContent = nextChar ? '「' + nextChar + '」からはじまることば' : 'すきなことばをかく';
+    $('shiri-word').value = '';
+    $('shiri-word').placeholder = nextChar ? '「' + nextChar + '」からはじまることば' : 'ことばをひらがなで';
+    var board = ensureShiriBoard();
+    board.reset();
+    board.myUserId = state.me ? state.me.id : null;
+    board.setEnabled(true);
+  }
+
+  async function postShiritori() {
+    if (!shiriBoard) return;
+    var word = Kana.toHiraganaOnly($('shiri-word').value).slice(0, 12);
+    if (!word) {
+      toast('ことばをひらがなで入れてください');
+      $('shiri-word').focus();
+      return;
+    }
+    var strokes = shiriBoard.strokes.map(function (s) {
+      return { id: s.id, c: s.c, w: s.w, p: s.p.slice() };
+    });
+    if (!strokes.length) {
+      toast('まだ何も描かれていません');
+      return;
+    }
+    $('btn-shiri-post').disabled = true;
+    try {
+      var res = await Net.api('/shiritori', {
+        body: {
+          word: word,
+          strokes: strokes,
+          ar: shiriBoard.aspect(),
+          prevSeq: shiritori && shiritori.last ? shiritori.last.seq : 0,
+        },
+      });
+      toast('つなぎました！');
+      // 参加したのでチェーン全体が返ってくる。状態を組み立て直して一覧へ
+      shiritori = null;
+      show('shiritori');
+      await loadShiritori();
+    } catch (e) {
+      if (e.status === 409) {
+        // 誰かが先に繋いだ。絵はそのままに、最新の状態を取り直す
+        toast(e.message + '。頭文字がかわっていないか確認してね');
+        try {
+          shiritori = await Net.api('/shiritori');
+          var nc = shiritori.last ? shiritori.last.nextChar : null;
+          $('shiri-draw-title').textContent = nc ? '「' + nc + '」からはじまることば' : 'すきなことばをかく';
+        } catch (e2) {
+          /* 次の「つなぐ」でまた分かる */
+        }
+      } else {
+        toast(e.message);
+      }
+    } finally {
+      $('btn-shiri-post').disabled = false;
+    }
+  }
+
   // ══ ギャラリー ════════════════════════════════════════════
 
   async function openGallery(mine) {
@@ -1146,6 +1322,43 @@
     $('btn-solo').onclick = function () {
       openSoloTopic();
     };
+
+    $('btn-shiritori').onclick = openShiritori;
+    $('shiritori-back').onclick = function () {
+      show('home');
+      loadHomeBackground();
+    };
+    $('shiritori-reload').onclick = loadShiritori;
+    $('btn-shiri-draw').onclick = enterShiritoriDraw;
+    $('shiri-draw-back').onclick = function () {
+      show('shiritori');
+      loadShiritori();
+    };
+    $('btn-shiri-post').onclick = postShiritori;
+    $('btn-shiri-undo').onclick = function () {
+      if (shiriBoard) shiriBoard.undoMine();
+    };
+    $('btn-shiri-clear').onclick = function () {
+      if (shiriBoard) shiriBoard.clearAll();
+    };
+
+    // しりとりのことば入力もひらがな限定(回答欄と同じ方式。IME は壊さない)
+    (function () {
+      var input = $('shiri-word');
+      var composingWord = false;
+      input.addEventListener('compositionstart', function () {
+        composingWord = true;
+      });
+      input.addEventListener('compositionend', function () {
+        composingWord = false;
+        input.value = Kana.toHiraganaOnly(input.value);
+      });
+      input.addEventListener('input', function () {
+        if (composingWord) return;
+        var filtered = Kana.toHiraganaOnly(input.value);
+        if (filtered !== input.value) input.value = filtered;
+      });
+    })();
 
     $('opt-nodraw').onchange = function () {
       Net.send({ t: 'noDraw', value: $('opt-nodraw').checked });

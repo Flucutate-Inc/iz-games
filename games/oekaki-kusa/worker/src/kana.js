@@ -56,3 +56,46 @@ export function isCorrect(guess, topic) {
   const answers = [topic.answer, ...(topic.alt || [])];
   return answers.some(a => answerKey(a) === key);
 }
+
+// ─── 絵しりとり用 ─────────────────────────────────────────
+
+const SMALL_TO_BIG = {
+  ぁ: 'あ', ぃ: 'い', ぅ: 'う', ぇ: 'え', ぉ: 'お',
+  ゃ: 'や', ゅ: 'ゆ', ょ: 'よ', ゎ: 'わ', ゕ: 'か', ゖ: 'け', っ: 'つ',
+};
+
+const DAKUTEN_STRIP = {
+  が: 'か', ぎ: 'き', ぐ: 'く', げ: 'け', ご: 'こ',
+  ざ: 'さ', じ: 'し', ず: 'す', ぜ: 'せ', ぞ: 'そ',
+  だ: 'た', ぢ: 'ち', づ: 'つ', で: 'て', ど: 'と',
+  ば: 'は', び: 'ひ', ぶ: 'ふ', べ: 'へ', ぼ: 'ほ',
+  ぱ: 'は', ぴ: 'ひ', ぷ: 'ふ', ぺ: 'へ', ぽ: 'ほ',
+};
+
+/**
+ * ことばの「しりとり上の最後の文字」= 次の人の頭文字。
+ * しりとりの慣例に合わせて、長音「ー」は飛ばし(「ぎたー」→「た」)、
+ * 小書き文字は大書きにする(「かぼちゃ」→「や」)。
+ */
+export function shiritoriNextChar(word) {
+  const s = toHiraganaOnly(word);
+  let i = s.length - 1;
+  while (i >= 0 && (s[i] === 'ー' || s[i] === 'ゝ')) i--;
+  if (i < 0) return null;
+  const ch = s[i];
+  return SMALL_TO_BIG[ch] || ch;
+}
+
+/** 前のことばに次のことばが繋がるか。濁点・半濁点の揺れは許す(「ふ」に「ぷ〜」も可) */
+export function shiritoriConnects(prevWord, nextWord) {
+  const tail = shiritoriNextChar(prevWord);
+  const s = toHiraganaOnly(nextWord);
+  if (!tail || !s) return false;
+  const head = SMALL_TO_BIG[s[0]] || s[0];
+  return (DAKUTEN_STRIP[head] || head) === (DAKUTEN_STRIP[tail] || tail);
+}
+
+/** 「ん」で終わることば(しりとりでは出せない) */
+export function shiritoriEndsWithN(word) {
+  return shiritoriNextChar(word) === 'ん';
+}

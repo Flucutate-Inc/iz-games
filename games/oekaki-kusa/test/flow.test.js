@@ -395,3 +395,97 @@ test('合言葉が違えば入れない', async () => {
   assert.match(err.message, /ありません/);
   c.close();
 });
+
+test('月間絵しりとり: 非同期でつなぎ、参加者だけが全体を見られる', async () => {
+  const a = await loginGuest('しりとりあ');
+  const b = await loginGuest('しりとりび');
+  const headers = t => ({ 'content-type': 'application/json', authorization: `Bearer ${t}` });
+  const strokes = [{ id: 's', c: 0, w: 1, p: [0.1, 0.1, 0.5, 0.5] }];
+
+  // 未ログインは 401
+  assert.equal((await fetch(`${BASE}/api/shiritori`)).status, 401);
+
+  // まっさらな月の状態(他のテストの影響を受けないよう、状態は相対で検証する)
+  const before = await (await fetch(`${BASE}/api/shiritori`, { headers: headers(a.token) })).json();
+  assert.match(before.month, /^\d{4}-\d{2}$/, '月は YYYY-MM');
+  const baseSeq = before.count;
+
+  // a が1枚つなぐ(空なら最初の1枚)。「ん」で終わることばは出せない
+  const ngN = await fetch(`${BASE}/api/shiritori`, {
+    method: 'POST',
+    headers: headers(a.token),
+    body: JSON.stringify({ word: 'みかん', strokes, ar: 1.5, prevSeq: baseSeq }),
+  });
+  assert.equal(ngN.status, 400, '「ん」で終わることばは 400');
+
+  // 頭文字: 既存チェーンがあれば before.last.nextChar から始める必要がある
+  const startChar = before.last ? before.last.nextChar : null;
+  // 接続チェックがあるので、頭文字に合うことばを組み立てる(startChar + 'り')
+  const wordA = startChar ? startChar + 'り' : 'りんご';
+  const okA = await fetch(`${BASE}/api/shiritori`, {
+    method: 'POST',
+    headers: headers(a.token),
+    body: JSON.stringify({ word: wordA, strokes, ar: 1.5, prevSeq: baseSeq }),
+  });
+  assert.ok(okA.ok, `a の投稿に失敗: ${okA.status} ${await okA.clone().text()}`);
+  const postedA = await okA.json();
+  assert.equal(postedA.entry.seq, baseSeq + 1);
+  assert.ok(Array.isArray(postedA.chain), '参加したのでチェーン全体が返る');
+
+  // a は連続でつなげない
+  const twice = await fetch(`${BASE}/api/shiritori`, {
+    method: 'POST',
+    headers: headers(a.token),
+    body: JSON.stringify({ word: 'なんでもいい', strokes, ar: 1.5, prevSeq: baseSeq + 1 }),
+  });
+  assert.equal(twice.status, 403, '同じ人の連続投稿は 403');
+
+  // 未参加の b には、最後の絵と頭文字は見えるが、ことばとチェーンは見えない
+  const bView = await (await fetch(`${BASE}/api/shiritori`, { headers: headers(b.token) })).json();
+  assert.equal(bView.participated, false);
+  assert.equal(bView.last.word, null, '未参加にはことばが伏せられる');
+  assert.equal(bView.chain, null, '未参加にはチェーンが見えない');
+  assert.ok(bView.last.nextChar, '頭文字は見える(しりとりに必要)');
+  assert.ok(bView.last.strokes.length > 0, '最後の絵は見える');
+
+  // 頭文字が合わないことばは 400
+  const wrongHead = bView.last.nextChar === 'あ' ? 'いぬ' : 'あひる';
+  const ngHead = await fetch(`${BASE}/api/shiritori`, {
+    method: 'POST',
+    headers: headers(b.token),
+    body: JSON.stringify({ word: wrongHead, strokes, ar: 1.5, prevSeq: bView.last.seq }),
+  });
+  assert.equal(ngHead.status, 400, '頭文字が合わないことばは 400');
+
+  // 古い prevSeq は 409(誰かが先につないだ扱い)
+  const stale = await fetch(`${BASE}/api/shiritori`, {
+    method: 'POST',
+    headers: headers(b.token),
+    body: JSON.stringify({ word: bView.last.nextChar + 'い', strokes, ar: 1.5, prevSeq: bView.last.seq - 1 }),
+  });
+  assert.equal(stale.status, 409, 'prevSeq がズレていたら 409');
+  const staleBody = await stale.json();
+  assert.equal(staleBody.conflict, true);
+  assert.ok(staleBody.nextChar, '409 レスポンスで最新の頭文字が分かる');
+
+  // b が正しくつなぐ。長音「ー」で終わることばは、その前の文字が次の頭文字になる
+  const wordB = bView.last.nextChar + 'くたー'; // 例:「りくたー」→ 次は「た」
+  const okB = await fetch(`${BASE}/api/shiritori`, {
+    method: 'POST',
+    headers: headers(b.token),
+    body: JSON.stringify({ word: wordB, strokes, ar: 1.2, prevSeq: bView.last.seq }),
+  });
+  assert.ok(okB.ok, `b の投稿に失敗: ${okB.status} ${await okB.clone().text()}`);
+  const postedB = await okB.json();
+  assert.equal(postedB.entry.seq, baseSeq + 2);
+
+  // 参加したので b にも全体が見える。ことばも明かされる
+  const bAfter = await (await fetch(`${BASE}/api/shiritori`, { headers: headers(b.token) })).json();
+  assert.equal(bAfter.participated, true);
+  assert.ok(bAfter.chain.length >= 2, '参加したのでチェーン全体が見える');
+  assert.equal(bAfter.last.word, wordB, '参加後はことばも見える');
+  assert.equal(bAfter.last.isMine, true);
+  assert.equal(bAfter.last.nextChar, 'た', '長音は飛ばして次の頭文字になる');
+  const mine = bAfter.chain.find(e => e.seq === baseSeq + 1);
+  assert.equal(mine.word, wordA, 'チェーンには他人のことばも入っている');
+});
