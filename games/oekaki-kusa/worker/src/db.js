@@ -71,7 +71,9 @@ export class Db {
     )`);
     this.sql.exec('CREATE INDEX IF NOT EXISTS idx_comments_drawing ON comments (drawing_id, id)');
 
-    // 月間絵しりとり。month('2026-08') ごとに1本のチェーンを seq でつなぐ
+    // 月間絵しりとり。month('2026-08') ごとに1本のチェーンを seq でつなぐ。
+    // guessed_prev は「前の絵をなんと読んだか」(2枚目以降)。前の人の実際のことばと
+    // ズレていてもしりとりは続く(ズレそのものが面白さ)。
     this.sql.exec(`CREATE TABLE IF NOT EXISTS shiritori_entries (
       id           INTEGER PRIMARY KEY AUTOINCREMENT,
       month        TEXT NOT NULL,
@@ -79,11 +81,18 @@ export class Db {
       user_id      INTEGER NOT NULL,
       display_name TEXT NOT NULL,
       word         TEXT NOT NULL,
+      guessed_prev TEXT,
       strokes_json TEXT NOT NULL,
       created_at   TEXT NOT NULL DEFAULT (datetime('now')),
       UNIQUE (month, seq)
     )`);
     this.sql.exec('CREATE INDEX IF NOT EXISTS idx_shiritori_month ON shiritori_entries (month, seq)');
+    // 旧スキーマ(guessed_prev なし)で作られた既存デプロイへの追いつき
+    try {
+      this.sql.exec('ALTER TABLE shiritori_entries ADD COLUMN guessed_prev TEXT');
+    } catch {
+      /* すでにある */
+    }
   }
 
   // ─── アカウント ──────────────────────────────────────────
@@ -289,15 +298,16 @@ export class Db {
    * 1枚つなぐ。seq の UNIQUE 制約で同時投稿の後勝ちを防ぐ
    * (DO はシングルスレッドなので実際には API 層の prevSeq 検査で先に弾かれる)。
    */
-  shiritoriAppend({ month, seq, userId, displayName, word, strokes, ar }) {
+  shiritoriAppend({ month, seq, userId, displayName, word, guessedPrev, strokes, ar }) {
     this.sql.exec(
-      `INSERT INTO shiritori_entries (month, seq, user_id, display_name, word, strokes_json)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO shiritori_entries (month, seq, user_id, display_name, word, guessed_prev, strokes_json)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
       month,
       seq,
       userId,
       displayName,
       word,
+      guessedPrev || null,
       JSON.stringify({ ar: ar || 4 / 3, strokes }),
     );
     const row = this.sql
@@ -322,6 +332,7 @@ export function publicShiritoriEntry(row) {
     userId: row.user_id,
     displayName: row.display_name,
     word: row.word,
+    guessedPrev: row.guessed_prev || null,
     ar,
     strokes,
     createdAt: row.created_at,

@@ -217,9 +217,12 @@
           <button class="bar-right link" id="shiritori-reload">更新</button>
         </header>
         <div class="scroll">
+          <!-- 直前の投稿の答え合わせ(繋いだ直後にだけ出る) -->
+          <div class="shiri-reveal hidden" id="shiri-reveal"></div>
+
           <p class="note" id="shiritori-status">よみこみちゅう…</p>
 
-          <!-- 最後の絵(未参加でも見える。ことばは伏せる) -->
+          <!-- 最後の絵(ことばは次の人が繋ぐまで伏せられる) -->
           <div class="shiri-last hidden" id="shiri-last">
             <canvas id="shiri-last-canvas" class="preview-canvas"></canvas>
             <p class="sheet-meta" id="shiri-last-meta"></p>
@@ -248,12 +251,24 @@
         </header>
         <div class="wordarea">
           <input
+            id="shiri-guess"
+            type="text"
+            inputmode="kana"
+            lang="ja"
+            maxlength="12"
+            placeholder="まえの絵はなんだとおもう？(ひらがな)"
+            autocomplete="off"
+            autocorrect="off"
+            autocapitalize="off"
+            spellcheck="false"
+          />
+          <input
             id="shiri-word"
             type="text"
             inputmode="kana"
             lang="ja"
             maxlength="12"
-            placeholder="ことばをひらがなで"
+            placeholder="そこからつながる じぶんのことば"
             autocomplete="off"
             autocorrect="off"
             autocapitalize="off"

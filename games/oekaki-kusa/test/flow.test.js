@@ -396,7 +396,7 @@ test('合言葉が違えば入れない', async () => {
   c.close();
 });
 
-test('月間絵しりとり: 非同期でつなぎ、参加者だけが全体を見られる', async () => {
+test('月間絵しりとり: 予想でつなぐ。ことばは次の人が繋ぐまで伏せられる', async () => {
   const a = await loginGuest('しりとりあ');
   const b = await loginGuest('しりとりび');
   const headers = t => ({ 'content-type': 'application/json', authorization: `Bearer ${t}` });
@@ -405,87 +405,113 @@ test('月間絵しりとり: 非同期でつなぎ、参加者だけが全体を
   // 未ログインは 401
   assert.equal((await fetch(`${BASE}/api/shiritori`)).status, 401);
 
-  // まっさらな月の状態(他のテストの影響を受けないよう、状態は相対で検証する)
+  // 現在の状態(他のテスト実行の影響を受けないよう、相対で検証する)
   const before = await (await fetch(`${BASE}/api/shiritori`, { headers: headers(a.token) })).json();
   assert.match(before.month, /^\d{4}-\d{2}$/, '月は YYYY-MM');
   const baseSeq = before.count;
+  const hasPrev = !!before.last;
 
-  // a が1枚つなぐ(空なら最初の1枚)。「ん」で終わることばは出せない
+  // 「ん」で終わることばは出せない
   const ngN = await fetch(`${BASE}/api/shiritori`, {
     method: 'POST',
     headers: headers(a.token),
-    body: JSON.stringify({ word: 'みかん', strokes, ar: 1.5, prevSeq: baseSeq }),
+    body: JSON.stringify({ word: 'みかん', guessedPrev: hasPrev ? 'なにか' : null, strokes, ar: 1.5, prevSeq: baseSeq }),
   });
   assert.equal(ngN.status, 400, '「ん」で終わることばは 400');
 
-  // 頭文字: 既存チェーンがあれば before.last.nextChar から始める必要がある
-  const startChar = before.last ? before.last.nextChar : null;
-  // 接続チェックがあるので、頭文字に合うことばを組み立てる(startChar + 'り')
-  const wordA = startChar ? startChar + 'り' : 'りんご';
+  // a が1枚つなぐ。2枚目以降は「前の絵の予想」が必須で、予想の最後の文字から
+  // 自分のことばが始まっていればよい(前の人の実際のことばとは比べない)
+  const guessA = hasPrev ? 'とけい' : null; // 前の絵をなんと読むかは自由
+  const wordA = hasPrev ? 'いるか' : 'りんご';
+  if (hasPrev) {
+    // 予想なしは 400
+    const noGuess = await fetch(`${BASE}/api/shiritori`, {
+      method: 'POST',
+      headers: headers(a.token),
+      body: JSON.stringify({ word: wordA, strokes, ar: 1.5, prevSeq: baseSeq }),
+    });
+    assert.equal(noGuess.status, 400, '2枚目以降は予想なしだと 400');
+    // 予想とことばが繋がっていないのも 400
+    const noConnect = await fetch(`${BASE}/api/shiritori`, {
+      method: 'POST',
+      headers: headers(a.token),
+      body: JSON.stringify({ word: 'すいか', guessedPrev: 'とけい', strokes, ar: 1.5, prevSeq: baseSeq }),
+    });
+    assert.equal(noConnect.status, 400, '予想の最後の文字から始まらないことばは 400');
+  }
   const okA = await fetch(`${BASE}/api/shiritori`, {
     method: 'POST',
     headers: headers(a.token),
-    body: JSON.stringify({ word: wordA, strokes, ar: 1.5, prevSeq: baseSeq }),
+    body: JSON.stringify({ word: wordA, guessedPrev: guessA, strokes, ar: 1.5, prevSeq: baseSeq }),
   });
   assert.ok(okA.ok, `a の投稿に失敗: ${okA.status} ${await okA.clone().text()}`);
   const postedA = await okA.json();
   assert.equal(postedA.entry.seq, baseSeq + 1);
-  assert.ok(Array.isArray(postedA.chain), '参加したのでチェーン全体が返る');
+  if (hasPrev) {
+    assert.ok(postedA.revealed, '繋いだ瞬間に前のことばが明かされる');
+    assert.ok(postedA.revealed.prevWord, '前の実際のことばが分かる');
+    assert.equal(typeof postedA.revealed.matched, 'boolean', '予想が合っていたかも分かる');
+  }
 
   // a は連続でつなげない
   const twice = await fetch(`${BASE}/api/shiritori`, {
     method: 'POST',
     headers: headers(a.token),
-    body: JSON.stringify({ word: 'なんでもいい', strokes, ar: 1.5, prevSeq: baseSeq + 1 }),
+    body: JSON.stringify({ word: 'かさ', guessedPrev: wordA, strokes, ar: 1.5, prevSeq: baseSeq + 1 }),
   });
   assert.equal(twice.status, 403, '同じ人の連続投稿は 403');
 
-  // 未参加の b には、最後の絵と頭文字は見えるが、ことばとチェーンは見えない
+  // 未参加の b には、最後の絵は見えるが、ことばは伏せられている(頭文字も教えない)
   const bView = await (await fetch(`${BASE}/api/shiritori`, { headers: headers(b.token) })).json();
   assert.equal(bView.participated, false);
-  assert.equal(bView.last.word, null, '未参加にはことばが伏せられる');
+  assert.equal(bView.last.word, null, '最後のことばは伏せられる(予想のネタバレ防止)');
+  assert.equal(bView.last.nextChar, undefined, '頭文字も教えない(予想が意味を持つように)');
   assert.equal(bView.chain, null, '未参加にはチェーンが見えない');
-  assert.ok(bView.last.nextChar, '頭文字は見える(しりとりに必要)');
   assert.ok(bView.last.strokes.length > 0, '最後の絵は見える');
 
-  // 頭文字が合わないことばは 400
-  const wrongHead = bView.last.nextChar === 'あ' ? 'いぬ' : 'あひる';
-  const ngHead = await fetch(`${BASE}/api/shiritori`, {
+  // 「ん」で終わる予想は「前の人は出せないはず」なので 400 で教える
+  const ngGuessN = await fetch(`${BASE}/api/shiritori`, {
     method: 'POST',
     headers: headers(b.token),
-    body: JSON.stringify({ word: wrongHead, strokes, ar: 1.5, prevSeq: bView.last.seq }),
+    body: JSON.stringify({ word: 'かめ', guessedPrev: 'みかん', strokes, ar: 1.5, prevSeq: bView.last.seq }),
   });
-  assert.equal(ngHead.status, 400, '頭文字が合わないことばは 400');
+  assert.equal(ngGuessN.status, 400, '「ん」で終わる予想は 400');
 
   // 古い prevSeq は 409(誰かが先につないだ扱い)
   const stale = await fetch(`${BASE}/api/shiritori`, {
     method: 'POST',
     headers: headers(b.token),
-    body: JSON.stringify({ word: bView.last.nextChar + 'い', strokes, ar: 1.5, prevSeq: bView.last.seq - 1 }),
+    body: JSON.stringify({ word: 'かい', guessedPrev: 'いるか', strokes, ar: 1.5, prevSeq: bView.last.seq - 1 }),
   });
   assert.equal(stale.status, 409, 'prevSeq がズレていたら 409');
-  const staleBody = await stale.json();
-  assert.equal(staleBody.conflict, true);
-  assert.ok(staleBody.nextChar, '409 レスポンスで最新の頭文字が分かる');
+  assert.equal((await stale.json()).conflict, true);
 
-  // b が正しくつなぐ。長音「ー」で終わることばは、その前の文字が次の頭文字になる
-  const wordB = bView.last.nextChar + 'くたー'; // 例:「りくたー」→ 次は「た」
+  // b が「わざとズレた予想」でつなぐ。それでもしりとりは続く(ズレが面白さ)
+  // 予想「らっぱー」(長音終わり) → 頭文字は「は」(濁点ゆるめ判定で「ぱ」もOK)
   const okB = await fetch(`${BASE}/api/shiritori`, {
     method: 'POST',
     headers: headers(b.token),
-    body: JSON.stringify({ word: wordB, strokes, ar: 1.2, prevSeq: bView.last.seq }),
+    body: JSON.stringify({ word: 'ぱせり', guessedPrev: 'らっぱー', strokes, ar: 1.2, prevSeq: bView.last.seq }),
   });
   assert.ok(okB.ok, `b の投稿に失敗: ${okB.status} ${await okB.clone().text()}`);
   const postedB = await okB.json();
   assert.equal(postedB.entry.seq, baseSeq + 2);
+  assert.equal(postedB.revealed.prevWord, wordA, '前の実際のことば(いるか)が明かされる');
+  assert.equal(postedB.revealed.matched, false, '「らっぱー」は「いるか」とズレている');
 
-  // 参加したので b にも全体が見える。ことばも明かされる
+  // 参加したので b にもチェーン全体が見える。答え合わせの形で
   const bAfter = await (await fetch(`${BASE}/api/shiritori`, { headers: headers(b.token) })).json();
   assert.equal(bAfter.participated, true);
-  assert.ok(bAfter.chain.length >= 2, '参加したのでチェーン全体が見える');
-  assert.equal(bAfter.last.word, wordB, '参加後はことばも見える');
-  assert.equal(bAfter.last.isMine, true);
-  assert.equal(bAfter.last.nextChar, 'た', '長音は飛ばして次の頭文字になる');
-  const mine = bAfter.chain.find(e => e.seq === baseSeq + 1);
-  assert.equal(mine.word, wordA, 'チェーンには他人のことばも入っている');
+  assert.ok(bAfter.chain.length >= 2);
+  const entryA = bAfter.chain.find(e => e.seq === baseSeq + 1);
+  const entryB = bAfter.chain.find(e => e.seq === baseSeq + 2);
+  assert.equal(entryA.word, wordA, '次の人が繋いだので a のことばは公開されている');
+  assert.equal(entryB.word, 'ぱせり', '最後尾でも自分のことばは見える');
+  assert.equal(entryB.guessedPrev, 'らっぱー', '予想も記録されている');
+  assert.equal(entryB.guessMatched, false, 'どこでズレたかが分かる');
+
+  // a から見ると、最後尾(b のことば)は伏せられている
+  const aAfter = await (await fetch(`${BASE}/api/shiritori`, { headers: headers(a.token) })).json();
+  const lastForA = aAfter.chain.find(e => e.seq === baseSeq + 2);
+  assert.equal(lastForA.word, null, '他人の最後尾のことばは、次が繋がるまで伏せられる');
 });

@@ -106,8 +106,12 @@
 
   Board.prototype.resize = function () {
     var rect = this.canvas.getBoundingClientRect();
-    this.cssW = Math.max(1, rect.width);
-    this.cssH = Math.max(1, rect.height);
+    // 隠れている画面のキャンバスは 0x0 になる。そのまま取り込むと内部バッファが
+    // 1x1 に壊れて「線が出ない」状態になるので、見えていない間は触らない
+    // (次に表示されたときの resize で正しい寸法になる)
+    if (rect.width < 2 || rect.height < 2) return;
+    this.cssW = rect.width;
+    this.cssH = rect.height;
     this.canvas.width = Math.round(this.cssW * this.dpr);
     this.canvas.height = Math.round(this.cssH * this.dpr);
     this.redraw();

@@ -15,7 +15,7 @@ import { Rooms, RULES, sanitizeStrokes } from './src/game.js';
 import { verifyIdToken, allowedProjects } from './src/firebase-auth.js';
 import {
   toHiraganaOnly,
-  shiritoriNextChar,
+  answerKey,
   shiritoriConnects,
   shiritoriEndsWithN,
 } from './src/kana.js';
@@ -23,6 +23,29 @@ import {
 /** 月間絵しりとりの区切り。日本のユーザー向けなので JST(UTC+9) の月で切る */
 function currentShiritoriMonth() {
   return new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 7);
+}
+
+/**
+ * 参加者向けのチェーン表示。ことばは「次の人が繋いだあと」だけ明かす
+ * (最後尾は次の人の予想のネタバレになるので伏せる。自分のことばだけは見える)。
+ * 各エントリに「前のことばと予想が合っていたか」(guessMatched)を付ける。
+ */
+function revealChain(chainRaw, viewerId) {
+  return chainRaw.map((e, i) => {
+    const isLast = i === chainRaw.length - 1;
+    const prev = i > 0 ? chainRaw[i - 1] : null;
+    return {
+      seq: e.seq,
+      displayName: e.displayName,
+      strokes: e.strokes,
+      ar: e.ar,
+      createdAt: e.createdAt,
+      isMine: e.userId === viewerId,
+      word: !isLast || e.userId === viewerId ? e.word : null,
+      guessedPrev: e.guessedPrev || null,
+      guessMatched: prev && e.guessedPrev ? answerKey(e.guessedPrev) === answerKey(prev.word) : null,
+    };
+  });
 }
 
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' };
@@ -200,14 +223,20 @@ export class GameServer {
     // ─── 月間絵しりとり ────────────────────────────────────
     //
     // 月ごとに1本のチェーン。リアルタイムに集まらなくても、誰かが最後に描いた絵を見て
-    // 自分のことばを描いて繋ぐ。**参加するまで、ことばは伏せる**(最後の絵と「次の頭文字」
-    // だけが見える)。参加すると、その月のチェーン全体(絵+ことば+名前)が見られる。
+    // 「まえの絵はなんだとおもう？」を**自分で予想して**、その予想の最後の文字から
+    // つながることばを描いて繋ぐ。前の人の実際のことばとの一致はチェックしない
+    // (ズレてもしりとりは続く。ズレそのものが面白さ=研究 命題1)。
+    //
+    // ことばが明かされるのは「次の人が繋いだとき」。だから最後尾のことばは常に伏せられ、
+    // 予想が正解にネタバレすることはない。参加すると、その月のチェーン全体
+    // (答え合わせ済みの絵+ことば+誰がどう読んだか)が見られる。
 
     if (path === '/api/shiritori' && request.method === 'GET') {
       const user = this.userFromRequest(request, url);
       if (!user) return errorJson('認証が必要です', 401);
       const month = currentShiritoriMonth();
-      const last = this.db.shiritoriLast(month);
+      const chainRaw = this.db.shiritoriChain(month);
+      const last = chainRaw.length ? chainRaw[chainRaw.length - 1] : null;
       const participated = this.db.shiritoriParticipated(month, user.id);
       return json({
         month,
@@ -220,12 +249,11 @@ export class GameServer {
               isMine: last.userId === user.id,
               strokes: last.strokes,
               ar: last.ar,
-              // ことばそのものは伏せて、しりとりに要る頭文字だけ教える
-              nextChar: shiritoriNextChar(last.word),
-              word: participated ? last.word : null,
+              // ことばは「次の人が繋ぐまで」伏せる。自分のことばだけは見える
+              word: last.userId === user.id ? last.word : null,
             }
           : null,
-        chain: participated ? this.db.shiritoriChain(month) : null,
+        chain: participated ? revealChain(chainRaw, user.id) : null,
       });
     }
 
@@ -245,7 +273,6 @@ export class GameServer {
           {
             error: last ? `${last.displayName}さんが先につなぎました` : 'しりとりが更新されています',
             conflict: true,
-            nextChar: last ? shiritoriNextChar(last.word) : null,
             currentSeq,
           },
           409,
@@ -259,8 +286,19 @@ export class GameServer {
       const word = toHiraganaOnly(body.word).slice(0, 12);
       if (!word) return errorJson('ことばをひらがなで入れてください', 400);
       if (shiritoriEndsWithN(word)) return errorJson('「ん」で終わることばは出せません', 400);
-      if (last && !shiritoriConnects(last.word, word)) {
-        return errorJson(`「${shiritoriNextChar(last.word)}」からはじまることばにしてください`, 400);
+
+      // 2枚目以降: 前の絵をなんと読んだか(予想)が必要。自分の予想と自分のことばが
+      // しりとりとして繋がっていればよい(前の人の実際のことばとは比べない)
+      let guessedPrev = '';
+      if (last) {
+        guessedPrev = toHiraganaOnly(body.guessedPrev).slice(0, 12);
+        if (!guessedPrev) return errorJson('まえの絵がなんだとおもうか、ひらがなで入れてください', 400);
+        if (shiritoriEndsWithN(guessedPrev)) {
+          return errorJson('「ん」で終わることばは描けないはず。よそうを見直してみて', 400);
+        }
+        if (!shiritoriConnects(guessedPrev, word)) {
+          return errorJson('よそうしたことばの最後の文字から、じぶんのことばをはじめてください', 400);
+        }
       }
 
       const strokes = sanitizeStrokes(body.strokes);
@@ -273,11 +311,27 @@ export class GameServer {
         userId: user.id,
         displayName: user.display_name,
         word,
+        guessedPrev: guessedPrev || null,
         strokes,
         ar: Number.isFinite(ar) && ar > 0.2 && ar < 5 ? ar : 4 / 3,
       });
-      // 参加したので、その月のチェーン全体を返す
-      return json({ entry, month, chain: this.db.shiritoriChain(month) });
+
+      // 繋いだ瞬間が答え合わせ。前のことばが明かされ、予想が合っていたか分かる
+      const revealed = last
+        ? {
+            prevWord: last.word,
+            prevBy: last.displayName,
+            guessed: guessedPrev,
+            matched: answerKey(guessedPrev) === answerKey(last.word),
+          }
+        : null;
+
+      return json({
+        entry,
+        month,
+        revealed,
+        chain: revealChain(this.db.shiritoriChain(month), user.id),
+      });
     }
 
     // ソロモード用のお題(1件)。答え合わせがないので label だけ返す

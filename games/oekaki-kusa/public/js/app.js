@@ -698,6 +698,10 @@
     board.reset();
     board.myUserId = state.me ? state.me.id : null;
     board.setEnabled(true);
+    // 画面が表示された直後にキャンバス寸法を確定させる(隠れている間は 0x0 なので)
+    requestAnimationFrame(function () {
+      board.resize();
+    });
   }
 
   async function postSoloDrawing() {
@@ -727,9 +731,11 @@
 
   // ══ 月間絵しりとり ════════════════════════════════════════
   //
-  // 月ごとに1本のチェーン。リアルタイムに集まらなくても、誰かが最後に描いた絵を見て
-  // 自分のことばを描いて繋ぐ。ことばは参加するまで伏せられていて(絵から推測する楽しみ)、
-  // 参加するとその月のしりとり全体(絵+ことば+名前)が見られる。
+  // 月ごとに1本のチェーン。誰かが最後に描いた絵を見て「なんだとおもう？」を自分で
+  // 予想し、その予想の最後の文字からつながることばを描いて繋ぐ。前の人の実際の
+  // ことばとの一致はチェックしない(ズレてもしりとりは続く。ズレそのものが面白さ)。
+  // ことばが明かされるのは「次の人が繋いだとき」。参加すると、その月のチェーン全体
+  // (答え合わせ済みの絵+ことば+誰がどう読んだか)が見られる。
 
   var shiritori = null; // GET /api/shiritori のレスポンス
   var shiriBoard = null;
@@ -741,6 +747,7 @@
 
   async function openShiritori() {
     show('shiritori');
+    $('shiri-reveal').classList.add('hidden');
     $('shiritori-status').textContent = 'よみこみちゅう…';
     $('shiri-last').classList.add('hidden');
     $('shiri-chain-wrap').classList.add('hidden');
@@ -769,6 +776,7 @@
     if (!last) {
       $('shiritori-status').textContent = 'まだだれも描いていません。';
       $('shiri-last').classList.add('hidden');
+      $('shiri-next').textContent = '';
       drawBtn.textContent = '最初の1枚をかく';
       drawBtn.disabled = false;
       $('shiri-hint').textContent = 'すきなことばを絵にして、しりとりをはじめよう。';
@@ -783,22 +791,22 @@
       $('shiri-last-meta').textContent =
         s.count + '番目 ・ ' + last.displayName + (last.isMine ? '（じぶん）' : '') +
         (last.word ? ' ・ 「' + last.word + '」' : '');
-      $('shiri-next').innerHTML = 'つぎは「<b>' + esc(last.nextChar || '?') + '</b>」からはじまることば';
 
       if (last.isMine) {
+        $('shiri-next').textContent = '';
         drawBtn.textContent = 'だれかがつなぐのをまとう';
         drawBtn.disabled = true;
         $('shiri-hint').textContent = 'じぶんの絵には つなげられません。';
       } else {
-        drawBtn.textContent = 'つづきをかく';
+        $('shiri-next').innerHTML = 'この絵は<b>なんだとおもう？</b>';
+        drawBtn.textContent = 'よそうして つなぐ';
         drawBtn.disabled = false;
-        $('shiri-hint').textContent = last.word
-          ? ''
-          : 'この絵がなにか、想像しながらつなごう。';
+        $('shiri-hint').textContent =
+          'よそうした ことばの さいごの文字から、つぎのことばを描こう。ずれても だいじょうぶ。';
       }
     }
 
-    // 参加済みならその月のチェーン全体
+    // 参加済みならその月のチェーン全体(答え合わせつき)
     if (s.participated && s.chain && s.chain.length) {
       $('shiri-chain-wrap').classList.remove('hidden');
       $('shiri-chain-label').textContent = monthLabel(s.month) + 'のしりとり ぜんぶ（' + s.chain.length + 'つ）';
@@ -811,10 +819,22 @@
         li.appendChild(cv);
         var body = document.createElement('div');
         body.className = 'shiri-entry-body';
+        // 最後尾のことばは、次の人が繋ぐまで伏せられている
+        var wordHtml = entry.word ? esc(entry.word) : '？？？';
         body.innerHTML =
-          '<span class="shiri-word">' + esc(entry.word) + '</span>' +
+          '<span class="shiri-word">' + wordHtml + '</span>' +
           '<span class="shiri-who">' + entry.seq + '番目 ・ ' + esc(entry.displayName) + '</span>';
         li.appendChild(body);
+        // 2枚目以降: 前の絵をどう読んだか。ズレていたら注記
+        if (entry.guessedPrev) {
+          var g = document.createElement('p');
+          g.className = 'shiri-guess' + (entry.guessMatched === false ? ' missed' : '');
+          g.textContent =
+            entry.guessMatched === false
+              ? 'まえの絵を「' + entry.guessedPrev + '」とよんだ（ずれた！）'
+              : 'まえの絵を「' + entry.guessedPrev + '」とよんだ';
+          li.appendChild(g);
+        }
         ol.appendChild(li);
         requestAnimationFrame(function () {
           Draw.render(cv, entry);
@@ -834,27 +854,39 @@
     shiriBoard = new Draw.Board($('shiri-board'), {});
     shiriBoard.myUserId = state.me ? state.me.id : null;
     buildPaintTools(shiriBoard, $('shiri-swatches'), $('shiri-widths'));
-    shiriBoard.resize();
     return shiriBoard;
   }
 
   function enterShiritoriDraw() {
     show('shiritori-draw');
-    var nextChar = shiritori && shiritori.last ? shiritori.last.nextChar : null;
-    $('shiri-draw-title').textContent = nextChar ? '「' + nextChar + '」からはじまることば' : 'すきなことばをかく';
+    var hasPrev = !!(shiritori && shiritori.last);
+    $('shiri-draw-title').textContent = hasPrev ? 'よそうして つなぐ' : 'すきなことばをかく';
+    $('shiri-guess').value = '';
     $('shiri-word').value = '';
-    $('shiri-word').placeholder = nextChar ? '「' + nextChar + '」からはじまることば' : 'ことばをひらがなで';
+    // 最初の1枚には「まえの絵」が無いので予想欄を隠す
+    $('shiri-guess').classList.toggle('hidden', !hasPrev);
     var board = ensureShiriBoard();
     board.reset();
     board.myUserId = state.me ? state.me.id : null;
     board.setEnabled(true);
+    // 画面が表示された直後にキャンバス寸法を確定させる(隠れている間は 0x0 なので)
+    requestAnimationFrame(function () {
+      board.resize();
+    });
   }
 
   async function postShiritori() {
     if (!shiriBoard) return;
+    var hasPrev = !!(shiritori && shiritori.last);
+    var guess = Kana.toHiraganaOnly($('shiri-guess').value).slice(0, 12);
     var word = Kana.toHiraganaOnly($('shiri-word').value).slice(0, 12);
+    if (hasPrev && !guess) {
+      toast('まえの絵がなんだとおもうか、ひらがなで入れてください');
+      $('shiri-guess').focus();
+      return;
+    }
     if (!word) {
-      toast('ことばをひらがなで入れてください');
+      toast('じぶんのことばを ひらがなで入れてください');
       $('shiri-word').focus();
       return;
     }
@@ -870,24 +902,35 @@
       var res = await Net.api('/shiritori', {
         body: {
           word: word,
+          guessedPrev: hasPrev ? guess : null,
           strokes: strokes,
           ar: shiriBoard.aspect(),
           prevSeq: shiritori && shiritori.last ? shiritori.last.seq : 0,
         },
       });
-      toast('つなぎました！');
-      // 参加したのでチェーン全体が返ってくる。状態を組み立て直して一覧へ
+      // 繋いだ瞬間が答え合わせ。前のことばが明かされる
       shiritori = null;
       show('shiritori');
       await loadShiritori();
+      var reveal = $('shiri-reveal');
+      if (res.revealed) {
+        reveal.classList.remove('hidden');
+        reveal.classList.toggle('missed', !res.revealed.matched);
+        reveal.innerHTML = res.revealed.matched
+          ? 'せいかい！ まえの絵は <b>「' + esc(res.revealed.prevWord) + '」</b> でした。'
+          : 'まえの絵は <b>「' + esc(res.revealed.prevWord) + '」</b> でした！' +
+            '<br>あなたのよそうは「' + esc(res.revealed.guessed) + '」。ずれたけど、しりとりはつづく。';
+      } else {
+        reveal.classList.remove('hidden');
+        reveal.classList.remove('missed');
+        reveal.textContent = 'しりとりを はじめました！だれかがつなぐのをまとう。';
+      }
     } catch (e) {
       if (e.status === 409) {
         // 誰かが先に繋いだ。絵はそのままに、最新の状態を取り直す
-        toast(e.message + '。頭文字がかわっていないか確認してね');
+        toast(e.message + '。あたらしい絵によそうしなおそう');
         try {
           shiritori = await Net.api('/shiritori');
-          var nc = shiritori.last ? shiritori.last.nextChar : null;
-          $('shiri-draw-title').textContent = nc ? '「' + nc + '」からはじまることば' : 'すきなことばをかく';
         } catch (e2) {
           /* 次の「つなぐ」でまた分かる */
         }
@@ -1342,9 +1385,9 @@
       if (shiriBoard) shiriBoard.clearAll();
     };
 
-    // しりとりのことば入力もひらがな限定(回答欄と同じ方式。IME は壊さない)
-    (function () {
-      var input = $('shiri-word');
+    // しりとりの入力(予想・じぶんのことば)もひらがな限定(回答欄と同じ方式。IME は壊さない)
+    ['shiri-guess', 'shiri-word'].forEach(function (id) {
+      var input = $(id);
       var composingWord = false;
       input.addEventListener('compositionstart', function () {
         composingWord = true;
@@ -1358,7 +1401,7 @@
         var filtered = Kana.toHiraganaOnly(input.value);
         if (filtered !== input.value) input.value = filtered;
       });
-    })();
+    });
 
     $('opt-nodraw').onchange = function () {
       Net.send({ t: 'noDraw', value: $('opt-nodraw').checked });
