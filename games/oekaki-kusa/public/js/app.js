@@ -745,6 +745,17 @@
     return m ? parseInt(m[1], 10) + '月' : '';
   }
 
+  /** 公開済みのことばの、しりとりの受け渡し文字(末尾。長音は飛ばす)を強調する */
+  function emphasizeShiriTail(word) {
+    var i = word.length - 1;
+    while (i > 0 && word[i] === 'ー') i--;
+    return (
+      esc(word.slice(0, i)) +
+      '<b class="tail">' + esc(word[i]) + '</b>' +
+      esc(word.slice(i + 1))
+    );
+  }
+
   async function openShiritori() {
     show('shiritori');
     $('shiri-reveal').classList.add('hidden');
@@ -806,35 +817,45 @@
       }
     }
 
-    // 参加済みならその月のチェーン全体(答え合わせつき)
+    // 参加済みならその月のチェーン全体(答え合わせつき)。
+    // 中央の点線に沿って左右交互にカードが連なる「数珠つなぎ」で見せる
     if (s.participated && s.chain && s.chain.length) {
       $('shiri-chain-wrap').classList.remove('hidden');
       $('shiri-chain-label').textContent = monthLabel(s.month) + 'のしりとり ぜんぶ（' + s.chain.length + 'つ）';
       var ol = $('shiri-chain');
       ol.innerHTML = '';
-      s.chain.forEach(function (entry) {
+      s.chain.forEach(function (entry, i) {
         var li = document.createElement('li');
+        li.className = i % 2 === 0 ? 'l' : 'r';
+        var card = document.createElement('div');
+        card.className = 'shiri-card' + (entry.isMine ? ' mine' : '');
+
         var cv = document.createElement('canvas');
         cv.style.aspectRatio = '1 / ' + Math.min(2.2, Math.max(0.6, entry.ar || 4 / 3));
-        li.appendChild(cv);
+        card.appendChild(cv);
+
         var body = document.createElement('div');
         body.className = 'shiri-entry-body';
-        // 最後尾のことばは、次の人が繋ぐまで伏せられている
-        var wordHtml = entry.word ? esc(entry.word) : '？？？';
+        // ことばは「自分が描いたところまで」公開。それより先は？？？のまま。
+        // 公開済みのことばは、しりとりの受け渡し文字(末尾)を強調する
+        var wordHtml = entry.word ? emphasizeShiriTail(entry.word) : '<span class="masked">？？？</span>';
         body.innerHTML =
           '<span class="shiri-word">' + wordHtml + '</span>' +
-          '<span class="shiri-who">' + entry.seq + '番目 ・ ' + esc(entry.displayName) + '</span>';
-        li.appendChild(body);
+          '<span class="shiri-who">' + entry.seq + ' ・ ' + esc(entry.displayName) + '</span>';
+        card.appendChild(body);
+
         // 2枚目以降: 前の絵をどう読んだか。ズレていたら注記
         if (entry.guessedPrev) {
           var g = document.createElement('p');
           g.className = 'shiri-guess' + (entry.guessMatched === false ? ' missed' : '');
           g.textContent =
             entry.guessMatched === false
-              ? 'まえの絵を「' + entry.guessedPrev + '」とよんだ（ずれた！）'
-              : 'まえの絵を「' + entry.guessedPrev + '」とよんだ';
-          li.appendChild(g);
+              ? '「' + entry.guessedPrev + '」とよんだ（ずれた！）'
+              : '「' + entry.guessedPrev + '」とよんだ';
+          card.appendChild(g);
         }
+
+        li.appendChild(card);
         ol.appendChild(li);
         requestAnimationFrame(function () {
           Draw.render(cv, entry);
@@ -982,11 +1003,13 @@
       var body = document.createElement('div');
       body.className = 'card-body';
       var meta =
-        d.mode === 'solo'
-          ? 'ひとりでかいた'
-          : d.solved
-            ? '<span class="ok">当てられた</span>'
-            : 'だれも当てられず';
+        d.mode === 'shiritori'
+          ? '絵しりとり'
+          : d.mode === 'solo'
+            ? 'ひとりでかいた'
+            : d.solved
+              ? '<span class="ok">当てられた</span>'
+              : 'だれも当てられず';
       var counts = '';
       if (d.likeCount || d.commentCount) {
         counts =
@@ -1030,11 +1053,13 @@
     $('sheet-meta').textContent =
       d.displayName +
       ' ・ ' +
-      (d.mode === 'solo'
-        ? 'ひとりでかいた'
-        : d.solved
-          ? (d.solverName || 'だれか') + 'さんが当てた'
-          : 'だれも当てられなかった');
+      (d.mode === 'shiritori'
+        ? '絵しりとり'
+        : d.mode === 'solo'
+          ? 'ひとりでかいた'
+          : d.solved
+            ? (d.solverName || 'だれか') + 'さんが当てた'
+            : 'だれも当てられなかった');
 
     renderSheetLike(d.likedByMe, d.likeCount);
     $('sheet-comment-input').value = '';

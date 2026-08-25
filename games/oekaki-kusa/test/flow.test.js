@@ -510,8 +510,31 @@ test('月間絵しりとり: 予想でつなぐ。ことばは次の人が繋ぐ
   assert.equal(entryB.guessedPrev, 'らっぱー', '予想も記録されている');
   assert.equal(entryB.guessMatched, false, 'どこでズレたかが分かる');
 
-  // a から見ると、最後尾(b のことば)は伏せられている
+  // a から見ると: ことばが見えるのは「自分が描いたところまで」。
+  // 自分(baseSeq+1)のあとに増えた b のことばは？？？のまま
   const aAfter = await (await fetch(`${BASE}/api/shiritori`, { headers: headers(a.token) })).json();
-  const lastForA = aAfter.chain.find(e => e.seq === baseSeq + 2);
-  assert.equal(lastForA.word, null, '他人の最後尾のことばは、次が繋がるまで伏せられる');
+  const bEntryForA = aAfter.chain.find(e => e.seq === baseSeq + 2);
+  assert.equal(bEntryForA.word, null, '自分が描いたあとに増えたことばは伏せられる');
+  assert.equal(bEntryForA.guessedPrev, 'らっぱー', '自分のことばがどう読まれたかは見える');
+  assert.equal(bEntryForA.guessMatched, false, 'ズレたことも見える(比較相手は公開済みの自分のことば)');
+  const aEntryForA = aAfter.chain.find(e => e.seq === baseSeq + 1);
+  assert.equal(aEntryForA.word, wordA, '自分が描いたところまでは見える');
+
+  // ギャラリーにも反映される。答え合わせ前(最後尾)の絵はお題が？？？にマスクされる
+  const galleryForA = await (
+    await fetch(`${BASE}/api/gallery?limit=60`, { headers: headers(a.token) })
+  ).json();
+  const aDrawing = galleryForA.drawings.find(d => d.mode === 'shiritori' && d.topic === wordA);
+  assert.ok(aDrawing, 'しりとりの絵がギャラリーに載る(次が繋がった分はことばが見える)');
+  const maskedForA = galleryForA.drawings.find(
+    d => d.mode === 'shiritori' && d.userId === b.user.id && d.topic === '？？？',
+  );
+  assert.ok(maskedForA, '答え合わせ前(最後尾)のしりとり絵は、お題が？？？にマスクされる');
+
+  // 作者本人(b)には自分のことばが見える
+  const galleryForB = await (
+    await fetch(`${BASE}/api/gallery?limit=60`, { headers: headers(b.token) })
+  ).json();
+  const bOwn = galleryForB.drawings.find(d => d.mode === 'shiritori' && d.userId === b.user.id);
+  assert.equal(bOwn.topic, 'ぱせり', '作者本人にはマスクされない');
 });

@@ -1041,20 +1041,58 @@ body {
   font-size: 16px;
 }
 
-/* 参加済みのチェーン表示 */
+/* 参加済みのチェーン表示。中央の点線に沿って左右交互に連なる「数珠つなぎ」 */
 .shiri-chain {
   list-style: none;
   margin: 8px 0 0;
-  padding: 0;
+  padding: 4px 0 12px;
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
+}
+.shiri-chain::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  border-left: 2px dashed var(--line);
 }
 .shiri-chain li {
+  display: flex;
+  position: relative;
+}
+.shiri-chain li.l {
+  justify-content: flex-start;
+}
+.shiri-chain li.r {
+  justify-content: flex-end;
+}
+/* 中央の線への結び目 */
+.shiri-chain li::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--paper);
+  border: 2px solid var(--ink-3);
+}
+.shiri-card {
+  width: 74%;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   overflow: hidden;
   background: var(--paper);
+  position: relative;
+  z-index: 1;
+}
+.shiri-card.mine {
+  border-color: var(--accent);
 }
 .shiri-chain canvas {
   display: block;
@@ -1072,8 +1110,16 @@ body {
   font-size: 16px;
   font-weight: 700;
 }
+.shiri-chain .shiri-word .tail {
+  color: var(--accent);
+  font-size: 18px;
+}
+.shiri-chain .shiri-word .masked {
+  color: var(--ink-3);
+  letter-spacing: 0.1em;
+}
 .shiri-chain .shiri-who {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--ink-3);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
@@ -1082,7 +1128,7 @@ body {
 .shiri-chain .shiri-guess {
   margin: 0;
   padding: 6px 12px 8px;
-  font-size: 12px;
+  font-size: 11px;
   color: var(--ink-3);
   border-top: 1px dashed var(--line);
 }

@@ -82,16 +82,22 @@ export class Db {
       display_name TEXT NOT NULL,
       word         TEXT NOT NULL,
       guessed_prev TEXT,
+      drawing_id   INTEGER,
       strokes_json TEXT NOT NULL,
       created_at   TEXT NOT NULL DEFAULT (datetime('now')),
       UNIQUE (month, seq)
     )`);
     this.sql.exec('CREATE INDEX IF NOT EXISTS idx_shiritori_month ON shiritori_entries (month, seq)');
-    // 旧スキーマ(guessed_prev なし)で作られた既存デプロイへの追いつき
-    try {
-      this.sql.exec('ALTER TABLE shiritori_entries ADD COLUMN guessed_prev TEXT');
-    } catch {
-      /* すでにある */
+    // 旧スキーマで作られた既存デプロイへの追いつき
+    for (const ddl of [
+      'ALTER TABLE shiritori_entries ADD COLUMN guessed_prev TEXT',
+      'ALTER TABLE shiritori_entries ADD COLUMN drawing_id INTEGER',
+    ]) {
+      try {
+        this.sql.exec(ddl);
+      } catch {
+        /* すでにある */
+      }
     }
   }
 
@@ -167,7 +173,38 @@ export class Db {
 
   drawingById(id, viewerId = null) {
     const row = this.selectWithCounts('WHERE d.id = ?', [id], viewerId)[0];
-    return row ? publicDrawing(row) : null;
+    if (!row) return null;
+    return this.maskUnrevealed([publicDrawing(row)], viewerId)[0];
+  }
+
+  /**
+   * まだ次が繋がっていない(答え合わせ前の)しりとり絵の drawing_id 一覧。
+   * その月のチェーンの最後尾だけが該当する(各月高々1件)。
+   */
+  unrevealedShiritoriDrawingIds() {
+    return new Set(
+      this.sql
+        .exec(
+          `SELECT drawing_id FROM shiritori_entries se
+           WHERE drawing_id IS NOT NULL
+             AND seq = (SELECT MAX(seq) FROM shiritori_entries WHERE month = se.month)`,
+        )
+        .toArray()
+        .map(r => r.drawing_id),
+    );
+  }
+
+  /**
+   * 答え合わせ前のしりとり絵は、ギャラリーではお題(=ことば)を伏せる。
+   * 次の人の予想のネタバレになるため。作者本人にだけは見える。
+   */
+  maskUnrevealed(drawings, viewerId = null) {
+    const hidden = this.unrevealedShiritoriDrawingIds();
+    if (!hidden.size) return drawings;
+    for (const d of drawings) {
+      if (hidden.has(d.id) && d.userId !== viewerId) d.topic = '？？？';
+    }
+    return drawings;
   }
 
   /**
@@ -188,16 +225,18 @@ export class Db {
     }
     const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
     const rows = this.selectWithCounts(where, params, viewerId, lim);
-    return rows.map(publicDrawing);
+    return this.maskUnrevealed(rows.map(publicDrawing), viewerId);
   }
 
   /** ホーム画面の背景などに使う、作品からのランダム抽出 */
   randomDrawings(n = 6) {
     const lim = Math.min(Math.max(1, n | 0), 20);
-    return this.sql
-      .exec('SELECT * FROM drawings ORDER BY RANDOM() LIMIT ?', lim)
-      .toArray()
-      .map(publicDrawing);
+    return this.maskUnrevealed(
+      this.sql
+        .exec('SELECT * FROM drawings ORDER BY RANDOM() LIMIT ?', lim)
+        .toArray()
+        .map(publicDrawing),
+    );
   }
 
   countDrawings() {
@@ -298,16 +337,17 @@ export class Db {
    * 1枚つなぐ。seq の UNIQUE 制約で同時投稿の後勝ちを防ぐ
    * (DO はシングルスレッドなので実際には API 層の prevSeq 検査で先に弾かれる)。
    */
-  shiritoriAppend({ month, seq, userId, displayName, word, guessedPrev, strokes, ar }) {
+  shiritoriAppend({ month, seq, userId, displayName, word, guessedPrev, drawingId, strokes, ar }) {
     this.sql.exec(
-      `INSERT INTO shiritori_entries (month, seq, user_id, display_name, word, guessed_prev, strokes_json)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO shiritori_entries (month, seq, user_id, display_name, word, guessed_prev, drawing_id, strokes_json)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       month,
       seq,
       userId,
       displayName,
       word,
       guessedPrev || null,
+      drawingId || null,
       JSON.stringify({ ar: ar || 4 / 3, strokes }),
     );
     const row = this.sql

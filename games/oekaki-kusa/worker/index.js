@@ -26,24 +26,37 @@ function currentShiritoriMonth() {
 }
 
 /**
- * 参加者向けのチェーン表示。ことばは「次の人が繋いだあと」だけ明かす
- * (最後尾は次の人の予想のネタバレになるので伏せる。自分のことばだけは見える)。
- * 各エントリに「前のことばと予想が合っていたか」(guessMatched)を付ける。
+ * 参加者向けのチェーン表示。**ことばが見えるのは「自分が最後に描いたところまで」**。
+ * 自分が描いたあとに他人が繋いだ分は「？？？」のまま(次に自分が繋いだとき、
+ * 溜まっていた分が一気に明かされる。答え合わせが繋ぐご褒美になる)。
+ *
+ * guessedPrev(前の絵をどう読んだか)は1つ先まで見せる — それは「自分のことばが
+ * どう読まれたか」であり、未公開のことばのネタバレにはならないため。
+ * guessMatched も同じ範囲で安全(比較相手の前のことばが公開済みの範囲だから)。
  */
 function revealChain(chainRaw, viewerId) {
+  let myLastSeq = 0;
+  for (const e of chainRaw) {
+    if (e.userId === viewerId && e.seq > myLastSeq) myLastSeq = e.seq;
+  }
   return chainRaw.map((e, i) => {
-    const isLast = i === chainRaw.length - 1;
     const prev = i > 0 ? chainRaw[i - 1] : null;
+    const isMine = e.userId === viewerId;
+    const wordRevealed = isMine || e.seq <= myLastSeq;
+    const guessRevealed = isMine || e.seq <= myLastSeq + 1;
     return {
       seq: e.seq,
       displayName: e.displayName,
       strokes: e.strokes,
       ar: e.ar,
       createdAt: e.createdAt,
-      isMine: e.userId === viewerId,
-      word: !isLast || e.userId === viewerId ? e.word : null,
-      guessedPrev: e.guessedPrev || null,
-      guessMatched: prev && e.guessedPrev ? answerKey(e.guessedPrev) === answerKey(prev.word) : null,
+      isMine,
+      word: wordRevealed ? e.word : null,
+      guessedPrev: guessRevealed ? e.guessedPrev || null : null,
+      guessMatched:
+        guessRevealed && prev && e.guessedPrev
+          ? answerKey(e.guessedPrev) === answerKey(prev.word)
+          : null,
     };
   });
 }
@@ -303,7 +316,22 @@ export class GameServer {
 
       const strokes = sanitizeStrokes(body.strokes);
       if (!strokes.length) return errorJson('絵が描かれていません', 400);
-      const ar = Number(body.ar);
+      const rawAr = Number(body.ar);
+      const ar = Number.isFinite(rawAr) && rawAr > 0.2 && rawAr < 5 ? rawAr : 4 / 3;
+
+      // しりとりの絵もギャラリーに載せる。お題はことば(=word)だが、次の人が繋ぐまでは
+      // ギャラリー側で「？？？」にマスクされる(Db.maskUnrevealed)
+      const drawingId = this.db.saveDrawing({
+        userId: user.id,
+        displayName: user.display_name,
+        topicLabel: word,
+        strokes,
+        ar,
+        solved: false,
+        solverName: null,
+        roomCode: null,
+        mode: 'shiritori',
+      });
 
       const entry = this.db.shiritoriAppend({
         month,
@@ -312,8 +340,9 @@ export class GameServer {
         displayName: user.display_name,
         word,
         guessedPrev: guessedPrev || null,
+        drawingId,
         strokes,
-        ar: Number.isFinite(ar) && ar > 0.2 && ar < 5 ? ar : 4 / 3,
+        ar,
       });
 
       // 繋いだ瞬間が答え合わせ。前のことばが明かされ、予想が合っていたか分かる
