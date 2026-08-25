@@ -99,6 +99,36 @@ export class Db {
         /* すでにある */
       }
     }
+    this.backfillShiritoriDrawings();
+  }
+
+  /**
+   * ギャラリー連携より前に描かれたしりとりの絵を drawings に追いつかせる(冪等)。
+   * 対象が無くなれば何もしないので、起動のたびに呼んで問題ない。
+   */
+  backfillShiritoriDrawings() {
+    const orphans = this.sql
+      .exec('SELECT * FROM shiritori_entries WHERE drawing_id IS NULL ORDER BY id')
+      .toArray();
+    for (const row of orphans) {
+      try {
+        const parsed = JSON.parse(row.strokes_json);
+        const id = this.saveDrawing({
+          userId: row.user_id,
+          displayName: row.display_name,
+          topicLabel: row.word,
+          strokes: parsed.strokes || [],
+          ar: parsed.ar || 4 / 3,
+          solved: false,
+          solverName: null,
+          roomCode: null,
+          mode: 'shiritori',
+        });
+        this.sql.exec('UPDATE shiritori_entries SET drawing_id = ? WHERE id = ?', id, row.id);
+      } catch (e) {
+        console.error('しりとり絵のギャラリー追いつきに失敗:', e && e.message);
+      }
+    }
   }
 
   // ─── アカウント ──────────────────────────────────────────
