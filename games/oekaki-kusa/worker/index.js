@@ -363,11 +363,20 @@ export class GameServer {
       });
     }
 
-    // ソロモード用のお題(1件)。答え合わせがないので label だけ返す
+    // ソロモード用のお題(1件)。答え合わせがないので label だけ返す。
+    // ?level=1|2|3 で難易度を絞れる
     if (path === '/api/topics/random' && request.method === 'GET') {
-      const list = topicsData.topics;
-      const t = list[crypto.getRandomValues(new Uint32Array(1))[0] % list.length];
-      return json({ label: t.label });
+      const lv = Number(url.searchParams.get('level'));
+      const all = topicsData.topics;
+      const list = [1, 2, 3].includes(lv) ? all.filter(t => t.level === lv) : all;
+      const pool = list.length ? list : all;
+      const t = pool[crypto.getRandomValues(new Uint32Array(1))[0] % pool.length];
+      return json({ label: t.label, level: t.level });
+    }
+
+    // 難易度の一覧(UI のラベル用)
+    if (path === '/api/levels' && request.method === 'GET') {
+      return json({ levels: topicsData.levels || [] });
     }
 
     // ソロモード: 1人で描いた作品。描いた時点でギャラリーに並ぶ
@@ -472,6 +481,9 @@ export class GameServer {
         return;
       case 'noDraw':
         room()?.setNoDraw(user.id, !!msg.value);
+        return;
+      case 'level':
+        room()?.setLevel(user.id, msg.level);
         return;
       case 's0':
         room()?.strokeStart(user.id, msg);

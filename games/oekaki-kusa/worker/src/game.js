@@ -101,6 +101,8 @@ class Room {
     this.timer = null;
     this.usedTopics = new Set();
     this.drawerQueue = [];
+    /** お題の難易度。1=かんたん / 2=ふつう / 3=むずかしい */
+    this.level = 1;
     /** その試合で描かれた絵(全ラウンド分)。推薦コーナーの対象になる */
     this.matchDrawings = [];
     /** 推薦コーナーでの投票 [{ voterId, voterName, drawingId, comment }] */
@@ -135,6 +137,7 @@ class Room {
       roundIndex: this.roundIndex,
       drawerId: this.drawerId,
       endsAt: this.endsAt,
+      level: this.level,
       players: [...this.players.values()].map(p => p.publicView(this)),
     };
   }
@@ -211,6 +214,16 @@ class Room {
     this.maybeStart();
   }
 
+  /** 待機中はだれでも変えられる(部屋の設定。原作にも難易度選択がある) */
+  setLevel(userId, level) {
+    if (this.state !== 'waiting') return;
+    if (!this.players.has(userId)) return;
+    const lv = Number(level);
+    if (![1, 2, 3].includes(lv)) return;
+    this.level = lv;
+    this.pushState();
+  }
+
   setNoDraw(userId, noDraw) {
     const p = this.players.get(userId);
     if (!p) return;
@@ -232,6 +245,7 @@ class Room {
     this.roundIndex = -1;
     this.usedTopics = new Set();
     this.drawerQueue = [];
+    // level は待機中に選ばれた設定なので、ここでは触らない
     this.matchDrawings = [];
     this.recommendations = [];
     for (const p of this.players.values()) p.score = 0;
@@ -257,8 +271,11 @@ class Room {
 
   pickTopic() {
     const all = this.rooms.topics;
-    const fresh = all.filter((_, i) => !this.usedTopics.has(i));
-    const pool = fresh.length ? fresh : all;
+    // 選ばれたレベルのお題だけを使う(見つからなければ全部から)
+    const byLevel = all.filter(t => t.level === this.level);
+    const scope = byLevel.length ? byLevel : all;
+    const fresh = scope.filter(t => !this.usedTopics.has(all.indexOf(t)));
+    const pool = fresh.length ? fresh : scope;
     const idx = crypto.getRandomValues(new Uint32Array(1))[0] % pool.length;
     const topic = pool[idx];
     this.usedTopics.add(all.indexOf(topic));

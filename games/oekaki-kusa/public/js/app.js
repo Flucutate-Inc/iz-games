@@ -22,6 +22,7 @@
     recommend: null, // { drawings, endsAt, selectedId, sent }
     soloBoard: null,
     soloTopic: null,
+    soloLevel: 1,
   };
 
   var izDiag = { steps: [], token: null };
@@ -343,6 +344,18 @@
       return p.userId === (state.me && state.me.id);
     })[0];
     $('btn-ready').textContent = mine && mine.ready ? 'じゅんびOK を取り消す' : 'じゅんびOK';
+
+    // むずかしさ(部屋の設定。だれでも変えられる)
+    var lv = room.level || 1;
+    var hints = {
+      1: '身近なモノ。絵にしやすい',
+      2: '組み合わせや場面。ひと工夫いる',
+      3: 'かたちの無いことば。エゴコロの勝負',
+    };
+    Array.prototype.forEach.call($('level-btns').children, function (b) {
+      b.setAttribute('aria-pressed', Number(b.dataset.level) === lv ? 'true' : 'false');
+    });
+    $('level-hint').textContent = hints[lv] || '';
   }
 
   // ══ プレイ ════════════════════════════════════════════════
@@ -669,12 +682,19 @@
   async function openSoloTopic() {
     show('solo-topic');
     $('solo-topic-label').textContent = '…';
+    renderSoloLevel();
     await rerollSoloTopic();
+  }
+
+  function renderSoloLevel() {
+    Array.prototype.forEach.call($('solo-level-btns').children, function (b) {
+      b.setAttribute('aria-pressed', Number(b.dataset.level) === state.soloLevel ? 'true' : 'false');
+    });
   }
 
   async function rerollSoloTopic() {
     try {
-      var res = await Net.api('/topics/random');
+      var res = await Net.api('/topics/random?level=' + state.soloLevel);
       state.soloTopic = res.label;
       $('solo-topic-label').textContent = res.label;
     } catch (e) {
@@ -897,7 +917,7 @@
   }
 
   async function postShiritori() {
-    if (!shiriBoard) return;
+    if (!shiriBoard || $('btn-shiri-post').disabled) return;
     var hasPrev = !!(shiritori && shiritori.last);
     var guess = Kana.toHiraganaOnly($('shiri-guess').value).slice(0, 12);
     var word = Kana.toHiraganaOnly($('shiri-word').value).slice(0, 12);
@@ -1198,6 +1218,40 @@
 
   var composing = false;
 
+  /**
+   * 入力欄のとなりにあるボタンを、Android でも確実に効かせる。
+   *
+   * Android の日本語入力では、変換が未確定のままボタンをタップすると
+   * **1回目のタップが IME の「確定」に消費されて click が飛ばない**ことがある
+   * (=「送信を押しても何も反応しない」)。さらに、確定でキーボードが閉じると
+   * レイアウトが動き、指を離した位置にボタンが無くなって click が失われる。
+   *
+   * そこで pointerdown で拾う。ただし preventDefault はしない
+   * (IME の確定を妨げると、未確定の文字が value に入らないまま送ってしまう)。
+   * 確定処理が走りきってから値を読めるよう、次のタスクまで待ってから実行する。
+   * click は保険。pointerdown で処理済みなら二重に走らせない。
+   */
+  function tapSafe(el, handler) {
+    var lastRun = 0;
+    function run() {
+      // 同じタップから複数のイベントが来るので、短時間の重複は捨てる
+      var now = Date.now();
+      if (now - lastRun < 700) return;
+      lastRun = now;
+      // IME の確定(compositionend → input)を先に走らせてから値を読む
+      setTimeout(handler, 0);
+    }
+    // Android PWA ではキーボードの開閉でレイアウトが激しく動き、
+    // pointerup までにボタンが移動して click が飛ばないことがある。
+    // touchstart は Pointer Events が来ない環境の保険。
+    el.addEventListener('pointerdown', run);
+    el.addEventListener('touchstart', run, { passive: true });
+    el.addEventListener('click', function (ev) {
+      ev.preventDefault();
+      run();
+    });
+  }
+
   function setupGuessInput() {
     var input = $('guess');
 
@@ -1215,13 +1269,27 @@
       if (filtered !== input.value) input.value = filtered;
     });
 
-    $('guess-form').addEventListener('submit', function (ev) {
-      ev.preventDefault();
+    function submitGuess() {
+      if (input.disabled) return;
       var text = Kana.toHiraganaOnly(input.value);
       input.value = '';
-      if (!text) return;
+      if (!text) {
+        // 送ったつもりで空だったとき、無反応に見えないように理由を出す
+        toast('こたえをひらがなで入れてね');
+        return;
+      }
       Net.send({ t: 'guess', text: text });
-      // 入力欄は開いたままにする。連続で撃てるのがこのゲームの気持ちよさなので
+      // IME の確定でフォーカスが外れていたら戻す。連続で撃てるのがこのゲームの
+      // 気持ちよさなので、キーボードは開いたままにしたい
+      if (document.activeElement !== input) input.focus();
+    }
+
+    // 送信ボタンは押した瞬間に送り、フォーカスも奪わない(キーボードは開いたまま)
+    tapSafe($('guess-send'), submitGuess);
+    // キーボードの Enter(送信)キー用
+    $('guess-form').addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      submitGuess();
     });
 
     // 「キーボード以外をタップするとキーボードが消える」
@@ -1391,6 +1459,22 @@
       openSoloTopic();
     };
 
+    // むずかしさ(対戦の待機画面)
+    Array.prototype.forEach.call($('level-btns').children, function (b) {
+      b.onclick = function () {
+        Net.send({ t: 'level', level: Number(b.dataset.level) });
+      };
+    });
+
+    // むずかしさ(ひとりでかく)
+    Array.prototype.forEach.call($('solo-level-btns').children, function (b) {
+      b.onclick = function () {
+        state.soloLevel = Number(b.dataset.level);
+        renderSoloLevel();
+        rerollSoloTopic();
+      };
+    });
+
     $('btn-shiritori').onclick = openShiritori;
     $('shiritori-back').onclick = function () {
       show('home');
@@ -1402,7 +1486,8 @@
       show('shiritori');
       loadShiritori();
     };
-    $('btn-shiri-post').onclick = postShiritori;
+    // ことば入力中にタップされる(同上)
+    tapSafe($('btn-shiri-post'), postShiritori);
     $('btn-shiri-undo').onclick = function () {
       if (shiriBoard) shiriBoard.undoMine();
     };
@@ -1486,7 +1571,8 @@
       openGallery(false);
     };
 
-    $('btn-recommend-send').onclick = sendRecommend;
+    // コメント入力中にタップされる(キーボード閉鎖のレイアウト移動で click が失われうる)
+    tapSafe($('btn-recommend-send'), sendRecommend);
 
     $('solo-topic-back').onclick = function () {
       show('home');

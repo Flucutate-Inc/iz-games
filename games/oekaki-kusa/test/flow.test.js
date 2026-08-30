@@ -538,3 +538,57 @@ test('月間絵しりとり: 予想でつなぐ。ことばは次の人が繋ぐ
   const bOwn = galleryForB.drawings.find(d => d.mode === 'shiritori' && d.userId === b.user.id);
   assert.equal(bOwn.topic, 'ぱせり', '作者本人にはマスクされない');
 });
+
+test('むずかしさ: レベルを選ぶと、そのレベルのお題だけが出る', async () => {
+  // お題データを直接読んで、レベルごとの答えの集合を作る
+  const topics = require('../data/topics.json').topics;
+  const byLevel = { 1: new Set(), 2: new Set(), 3: new Set() };
+  for (const t of topics) byLevel[t.level].add(t.label);
+  assert.ok(byLevel[1].size > 10 && byLevel[2].size > 10 && byLevel[3].size > 10, '各レベルにお題がある');
+
+  // ソロ用のお題APIはレベルで絞れる
+  for (const lv of [1, 2, 3]) {
+    for (let i = 0; i < 8; i++) {
+      const t = await (await fetch(`${BASE}/api/topics/random?level=${lv}`)).json();
+      assert.equal(t.level, lv, `level=${lv} を頼んだのに ${t.level} が来た`);
+      assert.ok(byLevel[lv].has(t.label), `${t.label} はレベル${lv}のお題ではない`);
+    }
+  }
+
+  // 対戦: 待機中にレベル3を選ぶと、出題が全部レベル3になる
+  const a = await new Client('れべるあ').connect();
+  const b = await new Client('れべるび').connect();
+  await a.waitType('hello');
+  await b.waitType('hello');
+
+  a.send({ t: 'join' });
+  const room = await a.waitType('room');
+  assert.equal(room.level, 1, 'はじめはレベル1');
+  b.send({ t: 'join', code: room.code });
+  await b.waitType('room');
+
+  a.clear();
+  a.send({ t: 'level', level: 3 });
+  const leveled = await a.wait(m => m.t === 'room' && m.level === 3, 5000);
+  assert.equal(leveled.level, 3, '選んだレベルが部屋の設定になる');
+
+  a.send({ t: 'ready', ready: true });
+  b.send({ t: 'ready', ready: true });
+
+  // 3ラウンドぶん、描き手に渡るお題が全部レベル3か見る
+  for (let round = 0; round < 3; round++) {
+    const rA = await a.wait(m => m.t === 'round' && m.roundIndex === round, 20000);
+    const rB = await b.wait(m => m.t === 'round' && m.roundIndex === round, 20000);
+    const drawerMsg = rA.topic ? rA : rB;
+    assert.ok(byLevel[3].has(drawerMsg.topic.label), `${drawerMsg.topic.label} はレベル3のお題ではない`);
+    // すぐ当てて次へ
+    const guesser = rA.topic ? b : a;
+    guesser.send({ t: 'guess', text: drawerMsg.topic.answer });
+    await guesser.wait(m => m.t === 'reveal', 20000);
+    a.clear();
+    b.clear();
+  }
+
+  a.close();
+  b.close();
+});

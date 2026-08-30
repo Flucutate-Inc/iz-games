@@ -69,6 +69,23 @@
         <div class="center">
           <p class="status" id="wait-status">ほかの人をまっています…</p>
           <ul class="players" id="wait-players"></ul>
+
+          <div class="levels">
+            <span class="field-label">おだいのむずかしさ</span>
+            <div class="level-btns" id="level-btns">
+              <button class="level" type="button" data-level="1">
+                <b>レベル1</b><span>かんたん</span>
+              </button>
+              <button class="level" type="button" data-level="2">
+                <b>レベル2</b><span>ふつう</span>
+              </button>
+              <button class="level" type="button" data-level="3">
+                <b>レベル3</b><span>むずかしい</span>
+              </button>
+            </div>
+            <p class="note" id="level-hint"></p>
+          </div>
+
           <button class="btn primary" id="btn-ready">じゅんびOK</button>
           <p class="note">全員が「じゅんびOK」になると始まります。2〜6人。</p>
         </div>
@@ -122,7 +139,7 @@
               spellcheck="false"
               enterkeyhint="send"
             />
-            <button class="send" type="submit" id="guess-send">送信</button>
+            <button class="send" type="button" id="guess-send">送信</button>
           </form>
         </div>
 
@@ -182,6 +199,13 @@
         <div class="center">
           <p class="note">このお題を絵にしてみよう</p>
           <p class="solo-topic-label" id="solo-topic-label">…</p>
+          <div class="levels">
+            <div class="level-btns" id="solo-level-btns">
+              <button class="level" type="button" data-level="1"><b>レベル1</b><span>かんたん</span></button>
+              <button class="level" type="button" data-level="2"><b>レベル2</b><span>ふつう</span></button>
+              <button class="level" type="button" data-level="3"><b>レベル3</b><span>むずかしい</span></button>
+            </div>
+          </div>
           <div class="stack">
             <button class="btn primary" id="btn-solo-start">これでかく</button>
             <button class="btn ghost" id="btn-solo-reroll">べつのお題にする</button>
