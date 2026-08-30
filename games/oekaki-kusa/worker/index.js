@@ -11,7 +11,7 @@
 
 import topicsData from '../data/topics.json';
 import { Db, publicUser } from './src/db.js';
-import { Rooms, RULES, sanitizeStrokes } from './src/game.js';
+import { Rooms, RULES, CHOICES, sanitizeStrokes } from './src/game.js';
 import { verifyIdToken, allowedProjects } from './src/firebase-auth.js';
 import {
   toHiraganaOnly,
@@ -116,7 +116,7 @@ export class GameServer {
   async handleApi(request, url, path) {
     // 設定の確認(IZ 連携が失敗したときの原因表示に使う)
     if (path === '/api/iz-config' && request.method === 'GET') {
-      return json({ firebaseProjects: this.projects, rules: RULES });
+      return json({ firebaseProjects: this.projects, rules: RULES, choices: CHOICES });
     }
 
     if (path === '/api/stats' && request.method === 'GET') {
@@ -452,7 +452,7 @@ export class GameServer {
     server.addEventListener('close', cleanup);
     server.addEventListener('error', cleanup);
 
-    server.send(JSON.stringify({ t: 'hello', user: publicUser(user), rules: RULES }));
+    server.send(JSON.stringify({ t: 'hello', user: publicUser(user), rules: RULES, choices: CHOICES }));
     return new Response(null, { status: 101, webSocket: client });
   }
 
@@ -484,6 +484,9 @@ export class GameServer {
         return;
       case 'level':
         room()?.setLevel(user.id, msg.level);
+        return;
+      case 'config':
+        room()?.setConfig(user.id, msg);
         return;
       case 's0':
         room()?.strokeStart(user.id, msg);

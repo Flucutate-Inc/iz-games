@@ -20,6 +20,7 @@ import { isCorrect } from './kana.js';
 export const RULES = {
   minPlayers: 2,
   maxPlayers: 6,
+  /** 既定値。部屋ごとに待機画面で変えられる(下の CHOICES から選ぶ) */
   rounds: 3,
   roundMs: 60_000,
   revealMs: 6_000,
@@ -39,6 +40,19 @@ export const RULES = {
   solveBase: 20,
   solveBonus: 80,
   drawerPerSolver: 30,
+};
+
+/**
+ * 待機画面で選べる設定。サーバーはこの一覧にある値しか受け付けない
+ * (クライアントが勝手な数値を送っても弾く)。
+ * 「サクッと」を上に置く: スマホの隙間時間に1試合終わることを優先した。
+ */
+export const CHOICES = {
+  rounds: [1, 3, 5],
+  /** 1枚に使える時間(描く=当てるの制限時間) */
+  roundMs: [30_000, 60_000, 90_000],
+  /** 答え合わせの表示時間 */
+  revealMs: [3_000, 6_000],
 };
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // 紛らわしい I/O/0/1 を除く
@@ -103,6 +117,10 @@ class Room {
     this.drawerQueue = [];
     /** お題の難易度。1=かんたん / 2=ふつう / 3=むずかしい */
     this.level = 1;
+    /** 待機画面で変えられる進行設定(既定は RULES) */
+    this.rounds = RULES.rounds;
+    this.roundMs = RULES.roundMs;
+    this.revealMs = RULES.revealMs;
     /** その試合で描かれた絵(全ラウンド分)。推薦コーナーの対象になる */
     this.matchDrawings = [];
     /** 推薦コーナーでの投票 [{ voterId, voterName, drawingId, comment }] */
@@ -133,7 +151,13 @@ class Room {
       t: 'room',
       code: this.code,
       state: this.state,
-      rules: { rounds: RULES.rounds, roundMs: RULES.roundMs, minPlayers: RULES.minPlayers, maxPlayers: RULES.maxPlayers },
+      rules: {
+        rounds: this.rounds,
+        roundMs: this.roundMs,
+        revealMs: this.revealMs,
+        minPlayers: RULES.minPlayers,
+        maxPlayers: RULES.maxPlayers,
+      },
       roundIndex: this.roundIndex,
       drawerId: this.drawerId,
       endsAt: this.endsAt,
@@ -224,6 +248,24 @@ class Room {
     this.pushState();
   }
 
+  /**
+   * 枚数・1枚の時間・答え合わせの時間。待機中だけ変えられる。
+   * 値は CHOICES にあるものだけ受け付ける。
+   */
+  setConfig(userId, patch) {
+    if (this.state !== 'waiting') return;
+    if (!this.players.has(userId)) return;
+    let changed = false;
+    for (const key of ['rounds', 'roundMs', 'revealMs']) {
+      if (patch[key] === undefined) continue;
+      const v = Number(patch[key]);
+      if (!CHOICES[key].includes(v)) continue;
+      this[key] = v;
+      changed = true;
+    }
+    if (changed) this.pushState();
+  }
+
   setNoDraw(userId, noDraw) {
     const p = this.players.get(userId);
     if (!p) return;
@@ -284,7 +326,7 @@ class Room {
 
   nextRound() {
     this.clearTimer();
-    if (this.roundIndex + 1 >= RULES.rounds) {
+    if (this.roundIndex + 1 >= this.rounds) {
       this.startRecommend();
       return;
     }
@@ -296,14 +338,14 @@ class Room {
     this.pointCount = 0;
     this.ar = 4 / 3;
     this.solvers = [];
-    this.endsAt = Date.now() + RULES.roundMs;
+    this.endsAt = Date.now() + this.roundMs;
 
     for (const p of this.players.values()) {
       if (!p.connected) continue;
       send(p.ws, {
         t: 'round',
         roundIndex: this.roundIndex,
-        rounds: RULES.rounds,
+        rounds: this.rounds,
         drawerId: this.drawerId,
         endsAt: this.endsAt,
         // お題は描き手にだけ渡す。読み(answer)も一緒に渡して、
@@ -315,7 +357,7 @@ class Room {
       });
     }
     this.pushState();
-    this.timer = setTimeout(() => this.endRound(), RULES.roundMs);
+    this.timer = setTimeout(() => this.endRound(), this.roundMs);
   }
 
   // ─── 描画 ──────────────────────────────────────────────
@@ -385,7 +427,7 @@ class Room {
 
     if (isCorrect(text, this.topic)) {
       const remain = Math.max(0, this.endsAt - Date.now());
-      const ratio = Math.min(1, remain / RULES.roundMs);
+      const ratio = Math.min(1, remain / this.roundMs);
       const points = RULES.solveBase + Math.round(RULES.solveBonus * ratio);
       p.score += points;
       this.solvers.push({ userId, displayName: p.displayName, points });
@@ -453,12 +495,12 @@ class Room {
       drawerPoints,
       solvers: this.solvers,
       drawingId,
-      nextInMs: RULES.revealMs,
-      isLast: this.roundIndex + 1 >= RULES.rounds,
+      nextInMs: this.revealMs,
+      isLast: this.roundIndex + 1 >= this.rounds,
     });
     this.pushState();
 
-    this.timer = setTimeout(() => this.nextRound(), RULES.revealMs);
+    this.timer = setTimeout(() => this.nextRound(), this.revealMs);
   }
 
   // ─── 推薦コーナー ────────────────────────────────────────

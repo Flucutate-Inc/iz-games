@@ -592,3 +592,56 @@ test('むずかしさ: レベルを選ぶと、そのレベルのお題だけが
   a.close();
   b.close();
 });
+
+test('進行の設定: 枚数と1枚の時間を変えられる', async () => {
+  const a = await new Client('せっていあ').connect();
+  const b = await new Client('せっていび').connect();
+  const hello = await a.waitType('hello');
+  await b.waitType('hello');
+  assert.ok(hello.choices && hello.choices.rounds.length, '選べる値の一覧が届く');
+
+  a.send({ t: 'join' });
+  const room = await a.waitType('room');
+  assert.equal(room.rules.rounds, 3, '既定は3枚');
+  assert.equal(room.rules.roundMs, 60000, '既定は60秒');
+  b.send({ t: 'join', code: room.code });
+  await b.waitType('room');
+
+  // 一覧に無い値は無視される(勝手な数値でタイマーを乗っ取れない)
+  a.clear();
+  a.send({ t: 'config', roundMs: 1 });
+  a.send({ t: 'config', rounds: 999 });
+  a.send({ t: 'level', level: 1 });
+  const afterBogus = await a.wait(m => m.t === 'room' && m.level === 1, 5000);
+  assert.equal(afterBogus.rules.roundMs, 60000, '一覧に無い秒数は無視される');
+  assert.equal(afterBogus.rules.rounds, 3, '一覧に無い枚数は無視される');
+
+  // 1枚・30秒・答え合わせ3秒にする
+  a.clear();
+  a.send({ t: 'config', rounds: 1, roundMs: 30000, revealMs: 3000 });
+  const cfg = await a.wait(m => m.t === 'room' && m.rules.rounds === 1, 5000);
+  assert.equal(cfg.rules.roundMs, 30000);
+  assert.equal(cfg.rules.revealMs, 3000);
+
+  // 実際に1枚で終わり、制限時間も30秒になっている
+  a.clear();
+  b.clear();
+  a.send({ t: 'ready', ready: true });
+  b.send({ t: 'ready', ready: true });
+
+  const rA = await a.wait(m => m.t === 'round' && m.roundIndex === 0, 10000);
+  const rB = await b.wait(m => m.t === 'round' && m.roundIndex === 0, 10000);
+  assert.equal(rA.rounds, 1, 'ラウンド数が伝わる');
+  const remain = rA.endsAt - Date.now();
+  assert.ok(remain > 25000 && remain <= 30000, `制限時間が30秒でない: 残り${remain}ms`);
+
+  const drawerMsg = rA.topic ? rA : rB;
+  const guesser = rA.topic ? b : a;
+  guesser.send({ t: 'guess', text: drawerMsg.topic.answer });
+  const reveal = await guesser.wait(m => m.t === 'reveal', 10000);
+  assert.equal(reveal.isLast, true, '1枚設定なので最初のラウンドが最後');
+  assert.equal(reveal.nextInMs, 3000, '答え合わせの時間も設定どおり');
+
+  a.close();
+  b.close();
+});

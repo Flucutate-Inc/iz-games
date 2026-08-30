@@ -356,6 +356,24 @@
       b.setAttribute('aria-pressed', Number(b.dataset.level) === lv ? 'true' : 'false');
     });
     $('level-hint').textContent = hints[lv] || '';
+
+    // 進行の設定(枚数・1枚の時間・答え合わせの時間)
+    var rules = room.rules || {};
+    function markSelected(containerId, attr, value) {
+      Array.prototype.forEach.call($(containerId).children, function (b) {
+        b.setAttribute('aria-pressed', Number(b.dataset[attr]) === value ? 'true' : 'false');
+      });
+    }
+    markSelected('rounds-btns', 'rounds', rules.rounds);
+    markSelected('roundms-btns', 'roundms', rules.roundMs);
+    markSelected('revealms-btns', 'revealms', rules.revealMs);
+
+    // 1試合にかかるおおよその時間(1枚あたり = 制限時間 + 答え合わせ)
+    var perRound = (rules.roundMs || 0) + (rules.revealMs || 0);
+    var totalSec = Math.round(((rules.rounds || 0) * perRound) / 1000);
+    $('config-summary').textContent =
+      rules.rounds + '枚 × ' + Math.round((rules.roundMs || 0) / 1000) + '秒 で、1試合およそ' +
+      (totalSec >= 60 ? Math.round(totalSec / 60) + '分' : totalSec + '秒');
   }
 
   // ══ プレイ ════════════════════════════════════════════════
@@ -1464,6 +1482,21 @@
       b.onclick = function () {
         Net.send({ t: 'level', level: Number(b.dataset.level) });
       };
+    });
+
+    // 進行の設定(枚数・1枚の時間・答え合わせの時間)
+    [
+      ['rounds-btns', 'rounds', 'rounds'],
+      ['roundms-btns', 'roundms', 'roundMs'],
+      ['revealms-btns', 'revealms', 'revealMs'],
+    ].forEach(function (spec) {
+      Array.prototype.forEach.call($(spec[0]).children, function (b) {
+        b.onclick = function () {
+          var msg = { t: 'config' };
+          msg[spec[2]] = Number(b.dataset[spec[1]]);
+          Net.send(msg);
+        };
+      });
     });
 
     // むずかしさ(ひとりでかく)

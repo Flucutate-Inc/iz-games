@@ -86,6 +86,34 @@
             <p class="note" id="level-hint"></p>
           </div>
 
+          <div class="levels">
+            <span class="field-label">なんまい かく？</span>
+            <div class="level-btns" id="rounds-btns">
+              <button class="level" type="button" data-rounds="1"><b>1枚</b><span>ためし</span></button>
+              <button class="level" type="button" data-rounds="3"><b>3枚</b><span>ふつう</span></button>
+              <button class="level" type="button" data-rounds="5"><b>5枚</b><span>じっくり</span></button>
+            </div>
+          </div>
+
+          <div class="levels">
+            <span class="field-label">1枚の じかん</span>
+            <div class="level-btns" id="roundms-btns">
+              <button class="level" type="button" data-roundms="30000"><b>30秒</b><span>はやい</span></button>
+              <button class="level" type="button" data-roundms="60000"><b>60秒</b><span>ふつう</span></button>
+              <button class="level" type="button" data-roundms="90000"><b>90秒</b><span>ゆっくり</span></button>
+            </div>
+          </div>
+
+          <div class="levels">
+            <span class="field-label">答え合わせの じかん</span>
+            <div class="level-btns" id="revealms-btns">
+              <button class="level" type="button" data-revealms="3000"><b>3秒</b><span>さくさく</span></button>
+              <button class="level" type="button" data-revealms="6000"><b>6秒</b><span>ふつう</span></button>
+            </div>
+          </div>
+
+          <p class="note" id="config-summary"></p>
+
           <button class="btn primary" id="btn-ready">じゅんびOK</button>
           <p class="note">全員が「じゅんびOK」になると始まります。2〜6人。</p>
         </div>
