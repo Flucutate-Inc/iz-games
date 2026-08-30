@@ -161,6 +161,10 @@
 
   Board.prototype._down = function (ev) {
     if (!this.enabled) return;
+    // キャンバス寸法が未確定(1x1)のまま描くと、座標が幅1で正規化されて壊れ、
+    // 「描けたように見えて投稿後に消える」ことになる。描き始めに必ず確定させる
+    if (this.cssW <= 2 || this.cssH <= 2) this.resize();
+    if (this.cssW <= 2 || this.cssH <= 2) return;
     ev.preventDefault();
     try {
       this.canvas.setPointerCapture(ev.pointerId);
@@ -188,6 +192,13 @@
       });
     }
   };
+
+  /**
+   * サーバーは1本の線の点数に上限がある(worker/src/game.js の maxPointsPerStroke = 400)。
+   * 超えた分は保存時に切り詰められ「描いた線が投稿後に消える」ことになるので、
+   * その手前でクライアントが自動的に線を分割する。見た目は途切れない。
+   */
+  var SPLIT_POINTS = 380;
 
   Board.prototype._move = function (ev) {
     if (!this.enabled || !this.active || ev.pointerId !== this.active.pointerId) return;
@@ -222,11 +233,42 @@
       ctx.moveTo(lastX * this.cssW, lastY * this.cssW);
       ctx.lineTo(x * this.cssW, y * this.cssW);
       ctx.stroke();
+
+      // 上限に近づいたら、ここまでの分を送り切ってから新しい線として続ける
+      if (p.length / 2 >= SPLIT_POINTS) {
+        this.pending.push.apply(this.pending, added);
+        added = [];
+        this._flush();
+        this._splitActiveAt(x, y);
+      }
     }
 
     if (added.length) {
       this.pending.push.apply(this.pending, added);
       this._scheduleFlush();
+    }
+  };
+
+  /** 同じ色・太さのまま、最後の点から新しい線として続ける(見た目は繋がっている) */
+  Board.prototype._splitActiveAt = function (x, y) {
+    var prev = this.active;
+    this.active = {
+      id: makeId(),
+      u: this.myUserId,
+      c: prev.c,
+      w: prev.w,
+      p: [x, y],
+      pointerId: prev.pointerId,
+    };
+    this.strokes.push(this.active);
+    if (this.opts.onStrokeStart) {
+      this.opts.onStrokeStart({
+        id: this.active.id,
+        c: prev.c,
+        w: prev.w,
+        p: [x, y],
+        ar: this.aspect(),
+      });
     }
   };
 

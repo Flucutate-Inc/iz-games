@@ -26,10 +26,15 @@ export const RULES = {
   /** 推薦コーナーの持ち時間(原作は7枚構成で106秒。3枚構成に合わせて縮めた) */
   recommendMs: 25_000,
   commentMaxLen: 80,
-  /** 1枚あたりの上限(荒らし・事故対策) */
-  maxStrokes: 800,
+  /**
+   * 1枚あたりの上限(荒らし・事故対策)。
+   * クライアントは1本が maxPointsPerStroke に近づくと自動で線を分割する
+   * (public/js/draw.js の SPLIT_POINTS)ので、実際に効くのは本数と総点数の上限。
+   * ぐるぐる塗りつぶしでも届きにくい値にしてある。
+   */
+  maxStrokes: 2000,
   maxPointsPerStroke: 400,
-  maxPointsTotal: 30_000,
+  maxPointsTotal: 60_000,
   /** 得点 */
   solveBase: 20,
   solveBonus: 80,
@@ -577,8 +582,10 @@ function sanitizePoints(arr) {
   for (let i = 0; i < n; i++) {
     const v = Number(arr[i]);
     if (!Number.isFinite(v)) return [];
-    // x も y も「キャンバスの幅」で割った値。縦長なので y は 1 を超える(上限 4 で十分)
-    out.push(Math.min(4, Math.max(0, Math.round(v * 1000) / 1000)));
+    // x も y も「キャンバスの幅」で割った値。x は 1 を大きく超えない。
+    // 縦長画面の y は 1 を超える(上限 4 で十分)
+    const max = i % 2 === 0 ? 1.05 : 4;
+    out.push(Math.min(max, Math.max(0, Math.round(v * 1000) / 1000)));
   }
   return out;
 }
