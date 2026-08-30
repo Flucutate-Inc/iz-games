@@ -5,7 +5,7 @@
  *   node --test test/
  *
  * 確認するのは「部屋に入れる → 全員準備で始まる → 描ける → ひらがなで当たる →
- * 得点が入る(描き手にも) → 3枚で終わる → 作品がギャラリーに残る」の一本道。
+ * 得点が入る(描き手にも) → 周回ぶん描いたら終わる → 作品がギャラリーに残る」の一本道。
  */
 const { test } = require('node:test');
 const assert = require('node:assert');
@@ -128,7 +128,7 @@ test('エゴコロクイズを1試合、2人で通す', async t => {
   await b.waitType('hello');
 
   // A がランダムマッチで部屋を作り、B が合言葉で入る
-  a.send({ t: 'join' });
+  a.send({ t: 'join', create: true });
   const roomA = await a.waitType('room');
   assert.match(roomA.code, /^[A-Z2-9]{4}$/, '合言葉は4文字');
 
@@ -136,6 +136,11 @@ test('エゴコロクイズを1試合、2人で通す', async t => {
   const roomB = await b.waitType('room');
   assert.equal(roomB.code, roomA.code);
   assert.equal(roomB.players.length, 2, '2人が同じ部屋にいる');
+
+  // このテストは対戦を最後まで通す。
+  // 推薦コーナーまで通したいので 2人 × 2周 = 4枚にする
+  a.send({ t: 'config', laps: 2, roundMs: 60000, revealMs: 6000 });
+  await a.wait(m => m.t === 'room' && m.rules.laps === 2, 5000);
 
   // 片方だけ準備完了では始まらない
   a.clear();
@@ -155,8 +160,9 @@ test('エゴコロクイズを1試合、2人で通す', async t => {
   let lastRanking = null;
   let matchDrawingIds = [];
   const postedIds = [];
+  const SHEETS = 4; // 2人 × 2周
 
-  for (let round = 0; round < 3; round++) {
+  for (let round = 0; round < SHEETS; round++) {
     const rA = await a.wait(m => m.t === 'round' && m.roundIndex === round, 20000);
     const rB = await b.wait(m => m.t === 'round' && m.roundIndex === round, 20000);
 
@@ -202,21 +208,21 @@ test('エゴコロクイズを1試合、2人で通す', async t => {
     assert.ok(correct.points > 0, '正解には得点が入る');
 
     // 回答者が全員当てたのでラウンドは即終了する
-    const reveal = await guesser.wait(m => m.t === 'reveal', 20000);
+    const reveal = await guesser.wait(m => m.t === 'reveal' && m.roundIndex === round, 20000);
     assert.equal(reveal.topic, drawerMsg.topic.label, '答え合わせでお題が明かされる');
     assert.ok(reveal.drawerPoints > 0, '描き手にも得点が入る');
     assert.ok(reveal.drawingId, '作品が保存されている');
-    assert.equal(reveal.isLast, round === 2);
+    assert.equal(reveal.isLast, round === SHEETS - 1);
 
     a.clear();
     b.clear();
 
-    if (round === 2) {
-      // 最終ラウンドの答え合わせのあと、推薦コーナーが開く(その試合で描かれた3枚が対象)
+    if (round === SHEETS - 1) {
+      // 最終ラウンドの答え合わせのあと、推薦コーナーが開く(その試合で描かれた全部が対象)
       const recA = await a.take(m => m.t === 'recommendStart', 20000);
       const recB = await b.take(m => m.t === 'recommendStart', 20000);
       matchDrawingIds = recA.drawings.map(d => d.drawingId);
-      assert.equal(matchDrawingIds.length, 3, '3ラウンド分の絵がそろっている');
+      assert.equal(matchDrawingIds.length, SHEETS, '全ラウンド分の絵がそろっている');
       assert.deepEqual(
         [...matchDrawingIds].sort(),
         recB.drawings.map(d => d.drawingId).sort(),
@@ -235,7 +241,7 @@ test('エゴコロクイズを1試合、2人で通す', async t => {
 
       // 全員が投票し終えると、集計結果 → 結果画面と続く
       const result = await a.take(m => m.t === 'recommendResult', 20000);
-      assert.equal(result.results.length, 3, '集計は3枚全部について返る');
+      assert.equal(result.results.length, SHEETS, '集計は全部の絵について返る');
       const votedTotal = result.results.reduce((n, r) => n + r.votes, 0);
       assert.equal(votedTotal, 2, '2人が1票ずつ入れた');
 
@@ -252,7 +258,7 @@ test('エゴコロクイズを1試合、2人で通す', async t => {
     '協調ゲームなので、描き手も回答者も点が入る',
   );
 
-  // 描かれた絵は3枚とも、推薦の有無に関わらず全部ギャラリーに載る
+  // 描かれた絵は、推薦の有無に関わらず全部ギャラリーに載る
   const gallery = await (await fetch(`${BASE}/api/gallery?limit=50`)).json();
   for (const id of matchDrawingIds) {
     const found = gallery.drawings.find(d => d.id === id);
@@ -561,7 +567,7 @@ test('むずかしさ: レベルを選ぶと、そのレベルのお題だけが
   await a.waitType('hello');
   await b.waitType('hello');
 
-  a.send({ t: 'join' });
+  a.send({ t: 'join', create: true });
   const room = await a.waitType('room');
   assert.equal(room.level, 1, 'はじめはレベル1');
   b.send({ t: 'join', code: room.code });
@@ -569,14 +575,16 @@ test('むずかしさ: レベルを選ぶと、そのレベルのお題だけが
 
   a.clear();
   a.send({ t: 'level', level: 3 });
-  const leveled = await a.wait(m => m.t === 'room' && m.level === 3, 5000);
+  a.send({ t: 'config', laps: 1, roundMs: 60000 });
+  const leveled = await a.wait(m => m.t === 'room' && m.level === 3 && m.rules.laps === 1, 5000);
   assert.equal(leveled.level, 3, '選んだレベルが部屋の設定になる');
+  const sheets = leveled.rules.totalRounds;
 
   a.send({ t: 'ready', ready: true });
   b.send({ t: 'ready', ready: true });
 
-  // 3ラウンドぶん、描き手に渡るお題が全部レベル3か見る
-  for (let round = 0; round < 3; round++) {
+  // 出題される全部の絵で、お題がレベル3か見る
+  for (let round = 0; round < sheets; round++) {
     const rA = await a.wait(m => m.t === 'round' && m.roundIndex === round, 20000);
     const rB = await b.wait(m => m.t === 'round' && m.roundIndex === round, 20000);
     const drawerMsg = rA.topic ? rA : rB;
@@ -584,7 +592,7 @@ test('むずかしさ: レベルを選ぶと、そのレベルのお題だけが
     // すぐ当てて次へ
     const guesser = rA.topic ? b : a;
     guesser.send({ t: 'guess', text: drawerMsg.topic.answer });
-    await guesser.wait(m => m.t === 'reveal', 20000);
+    await guesser.wait(m => m.t === 'reveal' && m.roundIndex === round, 20000);
     a.clear();
     b.clear();
   }
@@ -593,55 +601,105 @@ test('むずかしさ: レベルを選ぶと、そのレベルのお題だけが
   b.close();
 });
 
-test('進行の設定: 枚数と1枚の時間を変えられる', async () => {
+test('進行の設定: 周回数と1枚の時間を変えられる', async () => {
   const a = await new Client('せっていあ').connect();
   const b = await new Client('せっていび').connect();
   const hello = await a.waitType('hello');
   await b.waitType('hello');
-  assert.ok(hello.choices && hello.choices.rounds.length, '選べる値の一覧が届く');
+  assert.ok(hello.choices && hello.choices.laps.length, '選べる値の一覧が届く');
 
-  a.send({ t: 'join' });
+  // 既定値はサーバー定数で確認する(部屋はランダムマッチで再利用されることがあり、
+  // その部屋で前に選ばれた設定を引き継ぐのが正しい挙動なので)
+  const cfgApi = await (await fetch(`${BASE}/api/iz-config`)).json();
+  assert.equal(cfgApi.rules.laps, 1, '既定は1周');
+  assert.equal(cfgApi.rules.roundMs, 60000, '既定は60秒');
+
+  a.send({ t: 'join', create: true });
   const room = await a.waitType('room');
-  assert.equal(room.rules.rounds, 3, '既定は3枚');
-  assert.equal(room.rules.roundMs, 60000, '既定は60秒');
   b.send({ t: 'join', code: room.code });
-  await b.waitType('room');
+  const room2 = await b.waitType('room');
+  assert.equal(room2.rules.drawerCount, 2, '描き手になれるのは2人');
+
+  // まず既知の状態にそろえる(1周)
+  a.clear();
+  a.send({ t: 'config', laps: 1, roundMs: 60000, revealMs: 6000 });
+  const base = await a.wait(m => m.t === 'room' && m.rules.laps === 1, 5000);
+  // 1周 = 描き手になれる人が全員1回ずつ。2人なので2枚
+  assert.equal(base.rules.totalRounds, 2, '2人 × 1周 = 2枚');
 
   // 一覧に無い値は無視される(勝手な数値でタイマーを乗っ取れない)
   a.clear();
   a.send({ t: 'config', roundMs: 1 });
-  a.send({ t: 'config', rounds: 999 });
+  a.send({ t: 'config', laps: 999 });
   a.send({ t: 'level', level: 1 });
   const afterBogus = await a.wait(m => m.t === 'room' && m.level === 1, 5000);
   assert.equal(afterBogus.rules.roundMs, 60000, '一覧に無い秒数は無視される');
-  assert.equal(afterBogus.rules.rounds, 3, '一覧に無い枚数は無視される');
+  assert.equal(afterBogus.rules.laps, 1, '一覧に無い周回数は無視される');
 
-  // 1枚・30秒・答え合わせ3秒にする
+  // 2周・30秒・答え合わせ3秒にする → 2人なので4枚になるはず
   a.clear();
-  a.send({ t: 'config', rounds: 1, roundMs: 30000, revealMs: 3000 });
-  const cfg = await a.wait(m => m.t === 'room' && m.rules.rounds === 1, 5000);
+  a.send({ t: 'config', laps: 2, roundMs: 30000, revealMs: 3000 });
+  const cfg = await a.wait(m => m.t === 'room' && m.rules.laps === 2, 5000);
   assert.equal(cfg.rules.roundMs, 30000);
   assert.equal(cfg.rules.revealMs, 3000);
+  assert.equal(cfg.rules.totalRounds, 4, '2人 × 2周 = 4枚');
 
-  // 実際に1枚で終わり、制限時間も30秒になっている
   a.clear();
   b.clear();
   a.send({ t: 'ready', ready: true });
   b.send({ t: 'ready', ready: true });
 
-  const rA = await a.wait(m => m.t === 'round' && m.roundIndex === 0, 10000);
-  const rB = await b.wait(m => m.t === 'round' && m.roundIndex === 0, 10000);
-  assert.equal(rA.rounds, 1, 'ラウンド数が伝わる');
-  const remain = rA.endsAt - Date.now();
+  const r0 = await a.wait(m => m.t === 'round' && m.roundIndex === 0, 10000);
+  assert.equal(r0.rounds, 4, '実際の枚数が伝わる(2人 × 2周)');
+  const remain = r0.endsAt - Date.now();
   assert.ok(remain > 25000 && remain <= 30000, `制限時間が30秒でない: 残り${remain}ms`);
 
-  const drawerMsg = rA.topic ? rA : rB;
-  const guesser = rA.topic ? b : a;
-  guesser.send({ t: 'guess', text: drawerMsg.topic.answer });
-  const reveal = await guesser.wait(m => m.t === 'reveal', 10000);
-  assert.equal(reveal.isLast, true, '1枚設定なので最初のラウンドが最後');
-  assert.equal(reveal.nextInMs, 3000, '答え合わせの時間も設定どおり');
+  // 4枚こなす。全員が同じ回数(2回ずつ)描いていることも確かめる
+  const drawCount = {};
+  for (let round = 0; round < 4; round++) {
+    const rA = await a.wait(m => m.t === 'round' && m.roundIndex === round, 20000);
+    const rB = await b.wait(m => m.t === 'round' && m.roundIndex === round, 20000);
+    drawCount[rA.drawerId] = (drawCount[rA.drawerId] || 0) + 1;
+    const drawerMsg = rA.topic ? rA : rB;
+    const guesser = rA.topic ? b : a;
+    guesser.send({ t: 'guess', text: drawerMsg.topic.answer });
+    const reveal = await guesser.wait(m => m.t === 'reveal' && m.roundIndex === round, 20000);
+    assert.equal(reveal.isLast, round === 3, '4枚目が最後');
+    assert.equal(reveal.nextInMs, 3000, '答え合わせの時間も設定どおり');
+    a.clear();
+    b.clear();
+  }
+  assert.deepEqual(
+    Object.values(drawCount).sort(),
+    [2, 2],
+    '2周なので、全員がちょうど2回ずつ描く',
+  );
 
   a.close();
   b.close();
+});
+
+test('お題はすべて名詞(動詞句・ことわざを入れない)', () => {
+  const topics = require('../data/topics.json').topics;
+  assert.ok(topics.length >= 200, `お題が少ない: ${topics.length}`);
+
+  // 「を」は名詞の中にほぼ現れない助詞なので、これだけは強い手がかりになる
+  // (「が」「に」は「めがね」「にじ」のように語中に来るので使えない)
+  for (const t of topics) {
+    assert.ok(!t.answer.includes('を'), `${t.label}: 「を」を含む(動詞句の可能性)`);
+    assert.match(t.answer, /^[ぁ-ゖー]+$/, `${t.label}: 答えがひらがなでない`);
+    assert.ok(t.answer.length <= 12, `${t.label}: 長すぎる(文の可能性)`);
+  }
+
+  // 以前まぎれていた動詞句・ことわざが消えていること
+  const removed = [
+    'かぜをひく', 'さばをよむ', 'てをぬく', 'はらがたつ', 'みちにまよう',
+    'ねこにこばん', 'さるもきからおちる', 'いしのうえにもさんねん',
+    'おなかがすく', 'ねつがでる', 'みみがいたい', 'むしがいい',
+    'あしがぼうになる', 'ぬかにくぎ', 'さいふをおとす', 'びみょう',
+  ];
+  const answers = new Set(topics.map(t => t.answer));
+  for (const r of removed) {
+    assert.equal(answers.has(r), false, `${r} は名詞でないので消えているはず`);
+  }
 });

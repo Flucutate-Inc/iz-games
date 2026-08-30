@@ -21,7 +21,7 @@ export const RULES = {
   minPlayers: 2,
   maxPlayers: 6,
   /** 既定値。部屋ごとに待機画面で変えられる(下の CHOICES から選ぶ) */
-  rounds: 3,
+  laps: 1,
   roundMs: 60_000,
   revealMs: 6_000,
   /** 推薦コーナーの持ち時間(原作は7枚構成で106秒。3枚構成に合わせて縮めた) */
@@ -48,7 +48,8 @@ export const RULES = {
  * 「サクッと」を上に置く: スマホの隙間時間に1試合終わることを優先した。
  */
 export const CHOICES = {
-  rounds: [1, 3, 5],
+  /** 何周するか。1周 = 描き手になれる人が全員1回ずつ描く */
+  laps: [1, 2, 3],
   /** 1枚に使える時間(描く=当てるの制限時間) */
   roundMs: [30_000, 60_000, 90_000],
   /** 答え合わせの表示時間 */
@@ -118,9 +119,11 @@ class Room {
     /** お題の難易度。1=かんたん / 2=ふつう / 3=むずかしい */
     this.level = 1;
     /** 待機画面で変えられる進行設定(既定は RULES) */
-    this.rounds = RULES.rounds;
+    this.laps = RULES.laps;
     this.roundMs = RULES.roundMs;
     this.revealMs = RULES.revealMs;
+    /** 実際の枚数。開始時に「周回数 × 描き手の人数」で確定する */
+    this.totalRounds = 0;
     /** その試合で描かれた絵(全ラウンド分)。推薦コーナーの対象になる */
     this.matchDrawings = [];
     /** 推薦コーナーでの投票 [{ voterId, voterName, drawingId, comment }] */
@@ -152,9 +155,12 @@ class Room {
       code: this.code,
       state: this.state,
       rules: {
-        rounds: this.rounds,
+        laps: this.laps,
         roundMs: this.roundMs,
         revealMs: this.revealMs,
+        // 待機中は「いま始めたら何枚になるか」の見込み、開始後は確定値
+        totalRounds: this.totalRounds || this.laps * this.drawerCount(),
+        drawerCount: this.drawerCount(),
         minPlayers: RULES.minPlayers,
         maxPlayers: RULES.maxPlayers,
       },
@@ -256,7 +262,7 @@ class Room {
     if (this.state !== 'waiting') return;
     if (!this.players.has(userId)) return;
     let changed = false;
-    for (const key of ['rounds', 'roundMs', 'revealMs']) {
+    for (const key of ['laps', 'roundMs', 'revealMs']) {
       if (patch[key] === undefined) continue;
       const v = Number(patch[key]);
       if (!CHOICES[key].includes(v)) continue;
@@ -273,6 +279,12 @@ class Room {
     this.pushState();
   }
 
+  /** 描き手になれる人の数(描き手拒否を除く。全員が拒否なら全員が対象) */
+  drawerCount() {
+    const eligible = this.connectedPlayers.filter(p => !p.noDraw);
+    return (eligible.length ? eligible : this.connectedPlayers).length;
+  }
+
   /** 原作と同じで、全員が準備完了になったら自動で始まる */
   maybeStart() {
     if (this.state !== 'waiting') return;
@@ -287,7 +299,9 @@ class Room {
     this.roundIndex = -1;
     this.usedTopics = new Set();
     this.drawerQueue = [];
-    // level は待機中に選ばれた設定なので、ここでは触らない
+    // level / laps は待機中に選ばれた設定なので、ここでは触らない。
+    // 「全員が同じ回数だけ描く」ように、枚数は周回数 × 描き手の人数で決める
+    this.totalRounds = Math.max(1, this.laps * this.drawerCount());
     this.matchDrawings = [];
     this.recommendations = [];
     for (const p of this.players.values()) p.score = 0;
@@ -326,7 +340,7 @@ class Room {
 
   nextRound() {
     this.clearTimer();
-    if (this.roundIndex + 1 >= this.rounds) {
+    if (this.roundIndex + 1 >= this.totalRounds) {
       this.startRecommend();
       return;
     }
@@ -345,7 +359,7 @@ class Room {
       send(p.ws, {
         t: 'round',
         roundIndex: this.roundIndex,
-        rounds: this.rounds,
+        rounds: this.totalRounds,
         drawerId: this.drawerId,
         endsAt: this.endsAt,
         // お題は描き手にだけ渡す。読み(answer)も一緒に渡して、
@@ -490,13 +504,15 @@ class Room {
 
     this.broadcast({
       t: 'reveal',
+      // 何枚目の答え合わせかを明示する(遅れて届いた古い reveal と取り違えないため)
+      roundIndex: this.roundIndex,
       topic: this.topic.label,
       drawerId: this.drawerId,
       drawerPoints,
       solvers: this.solvers,
       drawingId,
       nextInMs: this.revealMs,
-      isLast: this.roundIndex + 1 >= this.rounds,
+      isLast: this.roundIndex + 1 >= this.totalRounds,
     });
     this.pushState();
 
@@ -708,7 +724,7 @@ export class Rooms {
     return this.create(true);
   }
 
-  join(user, ws, code) {
+  join(user, ws, code, create) {
     // すでにどこかにいるなら抜けてから入る
     const prev = this.byUser.get(user.id);
     if (prev && prev !== String(code || '').toUpperCase()) {
@@ -718,7 +734,10 @@ export class Rooms {
     }
 
     let room;
-    if (code) {
+    if (create) {
+      // 身内だけの部屋。ランダムマッチには出さない(合言葉を知っている人だけ入れる)
+      room = this.create(false);
+    } else if (code) {
       room = this.get(code);
       if (!room) return { error: 'その合言葉の部屋はありません' };
       if (room.players.size >= RULES.maxPlayers && !room.players.has(user.id)) {

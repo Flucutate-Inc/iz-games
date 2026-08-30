@@ -462,7 +462,7 @@ export class GameServer {
     switch (msg.t) {
       case 'join': {
         const code = msg.code ? String(msg.code).toUpperCase().slice(0, 8) : null;
-        const res = this.rooms.join(user, ws, code);
+        const res = this.rooms.join(user, ws, code, !!msg.create);
         if (res.error) {
           ws.send(JSON.stringify({ t: 'joinError', message: res.error }));
           return;

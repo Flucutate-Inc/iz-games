@@ -308,8 +308,8 @@
    */
   var lastRoomCode = null;
 
-  function joinRoom(code) {
-    var msg = { t: 'join', code: code || null };
+  function joinRoom(code, create) {
+    var msg = { t: 'join', code: code || null, create: !!create };
     if (Net.isOpen()) {
       Net.send(msg);
       return;
@@ -364,16 +364,19 @@
         b.setAttribute('aria-pressed', Number(b.dataset[attr]) === value ? 'true' : 'false');
       });
     }
-    markSelected('rounds-btns', 'rounds', rules.rounds);
+    markSelected('laps-btns', 'laps', rules.laps);
     markSelected('roundms-btns', 'roundms', rules.roundMs);
     markSelected('revealms-btns', 'revealms', rules.revealMs);
 
-    // 1試合にかかるおおよその時間(1枚あたり = 制限時間 + 答え合わせ)
+    // 1周 = 描き手になれる人が全員1回ずつ描く。枚数は 周回数 × 人数
     var perRound = (rules.roundMs || 0) + (rules.revealMs || 0);
-    var totalSec = Math.round(((rules.rounds || 0) * perRound) / 1000);
-    $('config-summary').textContent =
-      rules.rounds + '枚 × ' + Math.round((rules.roundMs || 0) / 1000) + '秒 で、1試合およそ' +
-      (totalSec >= 60 ? Math.round(totalSec / 60) + '分' : totalSec + '秒');
+    var sheets = rules.totalRounds || 0;
+    var totalSec = Math.round((sheets * perRound) / 1000);
+    $('config-summary').textContent = sheets
+      ? rules.drawerCount + '人 × ' + rules.laps + '周 = ' + sheets + '枚、' +
+        '1枚' + Math.round((rules.roundMs || 0) / 1000) + '秒で およそ' +
+        (totalSec >= 60 ? Math.round(totalSec / 60) + '分' : totalSec + '秒')
+      : 'ひとが集まると、なんまいになるか出ます';
   }
 
   // ══ プレイ ════════════════════════════════════════════════
@@ -1463,10 +1466,11 @@
     };
 
     $('btn-code').onclick = function () {
-      var code = prompt('合言葉（4文字）を入れてください。\n空のままなら新しい部屋を作ります。');
+      var code = prompt('合言葉（4文字）を入れてください。\n空のままなら、身内だけの新しい部屋を作ります。');
       if (code === null) return;
       code = code.trim().toUpperCase();
-      joinRoom(code || null);
+      // 空なら新規作成。ランダムマッチに出ないので、合言葉を知っている人しか入れない
+      joinRoom(code || null, !code);
     };
 
     $('btn-gallery').onclick = function () {
@@ -1486,7 +1490,7 @@
 
     // 進行の設定(枚数・1枚の時間・答え合わせの時間)
     [
-      ['rounds-btns', 'rounds', 'rounds'],
+      ['laps-btns', 'laps', 'laps'],
       ['roundms-btns', 'roundms', 'roundMs'],
       ['revealms-btns', 'revealms', 'revealMs'],
     ].forEach(function (spec) {
